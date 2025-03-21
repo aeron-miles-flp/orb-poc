@@ -1,0 +1,1888 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Orb with Lighting Controls</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: Arial, sans-serif;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+
+        #effect-buttons {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+        }
+
+        .effect-button {
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .effect-button:hover {
+            background: rgba(50, 50, 50, 0.8);
+            border-color: rgba(255, 255, 255, 0.8);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+    </div>
+    <div id="controls"></div>
+    <div id="effect-buttons">
+        <button class="effect-button" id="btn-trig-effect-1">Trigger Effect 1</button>
+        <button class="effect-button" id="btn-trig-effect-2">Trigger Effect 2</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r132/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+    <script>
+        // Main scene variables
+        let scene, camera, renderer, controls, orb;
+        let ambientLight, keyLight, rimLight;
+        let particles, particleSystem;
+        let orbOverlay;
+        // Create clock with autoStart=true and initialize with a non-zero value for immediate animation effects
+        let clock = new THREE.Clock(true);
+        let mixer; // Animation mixer
+        let animationActions = []; // Store all animation actions
+
+        // Track which preset is currently active - define here to avoid reference errors
+        let currentActivePreset = "preset1"; // Initialize to preset1 as default
+
+        // Set active preset when a trigger button is clicked - define function early to avoid reference errors
+        function setActivePreset(presetName)
+        {
+            currentActivePreset = presetName;
+            console.log("Active preset set to:", currentActivePreset);
+        }
+
+        // Configuration parameters
+        const config = {
+            lighting: {
+                ambient: { intensity: 0.4, color: [255, 255, 255] },
+                key: { intensity: 0.6, color: [255, 255, 255], position: [2, 3, 3] },
+                rim: { intensity: 2, color: [100, 150, 255], position: [-10, -2, -2] }
+            },
+            particles: {
+                enabled: true,
+                count: 75,
+                size: 0.05,
+                speed: 0.01,
+                color: [255, 130, 130],
+                glowColor: [255, 0, 0],
+                emitFromMesh: true,
+                lifetime: 18.0,
+                meanderNoiseScale: 0.1,
+                meanderStrength: 0.1,
+                growthFactor: 12, // New: How much particles grow during their lifecycle
+                // Ring behavior properties
+                spawnInRing: true,         // Enable ring spawning
+                equatorBandWidth: 0.15,    // Width of the band around the equator
+                ringRadius: 0.45,
+                ringRotation: 0,           // Rotation of the ring in radians
+                // Gradual spawning properties
+                spawnOverTime: true,       // Enable gradual spawning
+                spawnPeriod: 2.0,          // Time period (in seconds) over which to spawn all particles
+                spawnBatchSize: 12,         // How many particles to spawn at once
+                resetSpawning: false       // Reset the spawning process
+            },
+            shader: {
+                enabled: true,
+                intensity: 0.88,
+                noiseScale: 10,
+                pulseSpeed: 0.1,
+                emberColor: [255, 90, 0],
+                glowColor: [255, 0, 0],
+                pulseVariation: 1.0,
+                patternScale: 1.0,
+                fresnelPower: 2.0,        // Power of the Fresnel effect (higher = sharper falloff)
+                fresnelIntensity: 1.5,    // Intensity of the Fresnel effect
+                fresnelBias: 0.1,         // Bias of the Fresnel effect (controls starting point)
+
+                // Settings for second layer
+                layer2: {
+                    enabled: true,         // Enable second layer
+                    intensity: 0.67,        // Higher intensity for second layer
+                    noiseScale: 20,         // Different scale for variety
+                    pulseSpeed: 0.25,      // Different speed for second layer
+                    emberColor: [50, 180, 255], // Blue-tinted embers
+                    glowColor: [0, 70, 230],   // Blue glow
+                    pulseVariation: 0.7,   // Less variation in second layer
+                    patternScale: 5,     // Larger scale pattern
+                    blendFactor: 2       // How strongly the second layer blends
+                }
+            },
+            // Predefined effect presets
+            presets: {
+                preset1: {
+                    shader: {
+                        enabled: true,
+                        intensity: 0.91,
+                        noiseScale: 10,
+                        pulseSpeed: 0.1,
+                        emberColor: [255, 90, 0],
+                        glowColor: [255, 0, 0],
+                        pulseVariation: 1.0,
+                        patternScale: 1.0,
+                        fresnelPower: 2.0,
+                        fresnelIntensity: 1.5,
+                        fresnelBias: 0.1,
+                        layer2: {
+                            enabled: true,
+                            intensity: 0.71,
+                            noiseScale: 10,
+                            pulseSpeed: 0.25,
+                            emberColor: [50, 180, 255],
+                            glowColor: [0, 70, 230],
+                            pulseVariation: 0.7,
+                            patternScale: 5,
+                            blendFactor: 1.0
+                        }
+                    },
+                    particles: {
+                        enabled: true
+                    }
+                },
+                preset2: {
+                    shader: {
+                        enabled: true,
+                        intensity: 0.6,
+                        noiseScale: 20,
+                        pulseSpeed: 0.15,
+                        emberColor: [0, 30, 160],
+                        glowColor: [0, 30, 90],
+                        pulseVariation: 1.0,
+                        patternScale: 1.0,
+                        fresnelPower: 2.0,
+                        fresnelIntensity: 1.5,
+                        fresnelBias: 0.1,
+                        layer2: {
+                            enabled: true,         // Enable second layer
+                            intensity: 0.6,        // Higher intensity for second layer
+                            noiseScale: 20,         // Different scale for variety
+                            pulseSpeed: 0.25,      // Different speed for second layer
+                            emberColor: [50, 180, 255], // Blue-tinted embers
+                            glowColor: [0, 70, 230],   // Blue glow
+                            pulseVariation: 1,   // Less variation in second layer
+                            patternScale: 7,     // Larger scale pattern
+                            blendFactor: 5       // How strongly the second layer blends
+                        }
+                    },
+                    particles: {
+                        enabled: false
+                    }
+                }
+            },
+            animation: { enabled: true, speed: 0.35 }
+        };
+
+        // Shader code for iron filing embers effect
+        const emberVertexShader = `
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+            
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                vNormal = normalize(normalMatrix * normal);
+                
+                // Calculate view position for fresnel effect
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vViewPosition = -mvPosition.xyz; // Negative because we need direction from eye to vertex
+                
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const emberFragmentShader = `
+            uniform float time;
+            uniform float intensity;
+            uniform float noiseScale;
+            uniform float pulseSpeed;
+            uniform float pulseVariation;
+            uniform float patternScale;
+            uniform vec3 emberColor;
+            uniform vec3 glowColor;
+            uniform float fresnelPower;
+            uniform float fresnelIntensity;
+            uniform float fresnelBias;
+            
+            // Layer 2 uniforms
+            uniform bool layer2Enabled;
+            uniform float layer2Intensity;
+            uniform float layer2NoiseScale;
+            uniform float layer2PulseSpeed;
+            uniform float layer2PulseVariation;
+            uniform float layer2PatternScale;
+            uniform vec3 layer2EmberColor;
+            uniform vec3 layer2GlowColor;
+            uniform float layer2BlendFactor;
+            
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+            
+            // Simple 3D noise function
+            float mod289(float x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 perm(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+            
+            float noise(vec3 p) {
+                vec3 a = floor(p);
+                vec3 d = p - a;
+                d = d * d * (3.0 - 2.0 * d);
+                
+                vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
+                vec4 k1 = perm(b.xyxy);
+                vec4 k2 = perm(k1.xyxy + b.zzww);
+                
+                vec4 c = k2 + a.zzzz;
+                vec4 k3 = perm(c);
+                vec4 k4 = perm(c + 1.0);
+                
+                vec4 o1 = fract(k3 * (1.0 / 41.0));
+                vec4 o2 = fract(k4 * (1.0 / 41.0));
+                
+                vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
+                vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
+                
+                return o4.y * d.y + o4.x * (1.0 - d.y);
+            }
+            
+            float fbm(vec3 p) {
+                float sum = 0.0;
+                float amp = 1.0;
+                float freq = 1.0;
+                // 4 octaves of noise
+                for(int i = 0; i < 3; i++) {
+                    sum += amp * noise(p * freq);
+                    freq *= 2.0;
+                    amp *= 0.5;
+                }
+                return sum;
+            }
+            
+            // Calculate the Fresnel effect
+            float fresnel(vec3 viewDir, vec3 normal, float power, float bias) {
+                float NdotV = max(dot(normalize(normal), normalize(viewDir)), 0.0);
+                // Invert to make edges brighter and front faces dimmer
+                return bias + (1.0 - bias) * pow(1.0 - NdotV, power);
+            }
+            
+            // Function to calculate effect for a single layer with given parameters
+            vec4 calculateEmberEffect(vec3 position, float currentTime, float layerIntensity, 
+                                     float layerNoiseScale, float layerPulseSpeed, float layerPulseVar,
+                                     float layerPatternScale, vec3 layerEmberColor, vec3 layerGlowColor) {
+                // Create coherent noise pattern based on position and time
+                vec3 noisePos = position * layerPatternScale + vec3(0.0, 0.0, currentTime * layerPulseSpeed);
+                float baseNoise = fbm(noisePos * layerNoiseScale);
+                
+                // Pulse variation
+                float pulseFactor = sin(currentTime * layerPulseSpeed) * 0.5 + 0.5;
+                pulseFactor = pulseFactor * layerPulseVar + (1.0 - layerPulseVar);
+                
+                // Rim lighting effect (brighten edges)
+                float rimLight = 1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0);
+                rimLight = pow(rimLight, 3.0);
+                
+                // Calculate ember glow
+                float glow = baseNoise * pulseFactor * layerIntensity;
+                // glow = glow * (1.0 + rimLight * 2.0); // Enhance at edges
+                
+                // Make the pattern more "fiery" with threshold
+                float threshold = 0.55;
+                float emberIntensity = smoothstep(threshold, threshold + 0.2, glow);
+                
+                // Calculate Fresnel effect - this will be stronger at glancing angles
+                float fresnelFactor = fresnel(vViewPosition, vNormal, fresnelPower, fresnelBias);
+                
+                // Apply inverse Fresnel to fade out edges and keep front-facing geometry
+                float freshelMask = 1.0 - (fresnelFactor * fresnelIntensity);
+                
+                // Color interpolation based on intensity
+                vec3 finalColor = mix(layerGlowColor * 0.8, layerEmberColor, emberIntensity);
+                
+                // Add emissive glow with Fresnel effect applied
+                float emission = emberIntensity * layerIntensity * freshelMask;
+                
+                return vec4(finalColor, emission);
+            }
+            
+            void main() {
+                // Calculate base layer effect
+                vec4 layer1 = calculateEmberEffect(
+                    vPosition, time, intensity, noiseScale, pulseSpeed, 
+                    pulseVariation, patternScale, emberColor, glowColor
+                );
+                
+                // Initialize final color with layer 1
+                vec4 finalEffect = layer1;
+                
+                // If second layer is enabled, blend it with first layer
+                if (layer2Enabled) {
+                    // Calculate second layer with its own parameters
+                    vec4 layer2 = calculateEmberEffect(
+                        vPosition, time * 1.2, layer2Intensity, layer2NoiseScale, 
+                        layer2PulseSpeed, layer2PulseVariation, layer2PatternScale, 
+                        layer2EmberColor, layer2GlowColor
+                    );
+                    
+                    // Use layer1's alpha as a mask for layer2 and blend additively
+                    float maskFactor = layer1.a * layer2BlendFactor;
+                    
+                    // Blend the colors additively, with layer2 masked by layer1's intensity
+                    finalEffect.rgb = layer1.rgb + (layer2.rgb * maskFactor);
+                    
+                    // Adjust the alpha (emission) value for the combined effect
+                    finalEffect.a = max(layer1.a, layer2.a * maskFactor);
+                }
+                
+                // Output the final composited color
+                gl_FragColor = finalEffect;
+            }
+        `;
+
+        init();
+        animate();
+
+        function init()
+        {
+            // Set the initial clock time to ensure animations start at a visible point
+            clock.elapsedTime = Math.PI / 4; // Starting with a visible pulse
+
+            // Create scene and camera
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 2);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.outputEncoding = THREE.sRGBEncoding; // Add proper color encoding
+            document.body.appendChild(renderer.domElement);
+
+            // Setup lighting
+            setupLighting();
+
+            // Load the orb model
+            loadOrbModel();
+
+            // Create particle system
+            // createParticles();
+
+            // Setup GUI
+            setupGUI();
+
+            // Orbit controls to allow rotation
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.15;
+            // Limit horizontal rotation (azimuth) to ±45 degrees
+            const limitAngle = THREE.MathUtils.degToRad(15);
+            controls.minAzimuthAngle = -limitAngle;
+            controls.maxAzimuthAngle = limitAngle;
+
+            // Optionally limit vertical rotation (polar angle)
+            controls.minPolarAngle = THREE.MathUtils.degToRad(15); // Prevent too much downward view
+            controls.maxPolarAngle = THREE.MathUtils.degToRad(120); // Prevent flipping over the top
+
+            // Setup effect button handlers
+            setupEffectButtons();
+
+            // Apply preset1 as the default effect on start
+            setActivePreset("preset1");
+            applyPreset(config.presets.preset1);
+
+            window.addEventListener("resize", onWindowResize);
+        }
+
+        // Set up effect button event handlers
+        function setupEffectButtons()
+        {
+            // Button to activate preset1 (red/blue with particles)
+            document.getElementById('btn-trig-effect-1').addEventListener('click', function ()
+            {
+                // Reset the clock to restart the animation from beginning
+                clock.elapsedTime = Math.PI / 4; // Start with visible pulse
+
+                // Set the active preset before applying it
+                setActivePreset("preset1");
+
+                applyPreset(config.presets.preset1);
+                resetParticleSystem();
+
+                // Force immediate render to show the effects without delay
+                if (orbOverlay && orbOverlay.material && orbOverlay.material.uniforms)
+                {
+                    // Make sure the shader is visible
+                    orbOverlay.visible = true;
+
+                    // Reset the shader time value to restart the animation
+                    orbOverlay.material.uniforms.time.value = clock.elapsedTime;
+
+                    // Update all shader uniforms to ensure everything is refreshed
+                    updateShaderUniforms();
+
+                    // Force an immediate render to show the effects
+                    controls.update();
+                    renderer.render(scene, camera);
+                }
+            });
+
+            // Button to activate preset2 (blue only)
+            document.getElementById('btn-trig-effect-2').addEventListener('click', function ()
+            {
+                // Reset the clock to restart the animation from beginning
+                clock.elapsedTime = Math.PI / 4; // Start with visible pulse
+
+                // Set the active preset before applying it
+                setActivePreset("preset2");
+
+                applyPreset(config.presets.preset2);
+                // Make sure particles are hidden
+                if (particleSystem)
+                {
+                    particleSystem.visible = false;
+                }
+
+                // Force immediate render to show the effects without delay
+                if (orbOverlay && orbOverlay.material && orbOverlay.material.uniforms)
+                {
+                    // Make sure the shader is visible
+                    orbOverlay.visible = true;
+
+                    // Reset the shader time value to restart the animation
+                    orbOverlay.material.uniforms.time.value = clock.elapsedTime;
+
+                    // Update all shader uniforms to ensure everything is refreshed
+                    updateShaderUniforms();
+
+                    // Force an immediate render to show the effects
+                    controls.update();
+                    renderer.render(scene, camera);
+                }
+            });
+        }
+
+        // Apply settings from a preset
+        function applyPreset(preset)
+        {
+            // Apply shader settings
+            if (preset.shader)
+            {
+                config.shader.enabled = preset.shader.enabled;
+
+                if (preset.shader.enabled)
+                {
+                    // Apply main shader properties
+                    if (preset.shader.intensity !== undefined) config.shader.intensity = preset.shader.intensity;
+                    if (preset.shader.noiseScale !== undefined) config.shader.noiseScale = preset.shader.noiseScale;
+                    if (preset.shader.pulseSpeed !== undefined) config.shader.pulseSpeed = preset.shader.pulseSpeed;
+                    if (preset.shader.emberColor !== undefined) config.shader.emberColor = preset.shader.emberColor;
+                    if (preset.shader.glowColor !== undefined) config.shader.glowColor = preset.shader.glowColor;
+                    if (preset.shader.pulseVariation !== undefined) config.shader.pulseVariation = preset.shader.pulseVariation;
+                    if (preset.shader.patternScale !== undefined) config.shader.patternScale = preset.shader.patternScale;
+
+                    // Apply layer 2 settings if present
+                    if (preset.shader.layer2)
+                    {
+                        config.shader.layer2.enabled = preset.shader.layer2.enabled;
+                        if (preset.shader.layer2.enabled)
+                        {
+                            if (preset.shader.layer2.intensity !== undefined)
+                            {
+                                config.shader.layer2.intensity = preset.shader.layer2.intensity;
+                            }
+                            if (preset.shader.layer2.noiseScale !== undefined)
+                            {
+                                config.shader.layer2.noiseScale = preset.shader.layer2.noiseScale;
+                            }
+                            if (preset.shader.layer2.pulseSpeed !== undefined)
+                            {
+                                config.shader.layer2.pulseSpeed = preset.shader.layer2.pulseSpeed;
+                            }
+                            if (preset.shader.layer2.emberColor !== undefined)
+                            {
+                                config.shader.layer2.emberColor = preset.shader.layer2.emberColor;
+                            }
+                            if (preset.shader.layer2.glowColor !== undefined)
+                            {
+                                config.shader.layer2.glowColor = preset.shader.layer2.glowColor;
+                            }
+                            if (preset.shader.layer2.pulseVariation !== undefined)
+                            {
+                                config.shader.layer2.pulseVariation = preset.shader.layer2.pulseVariation;
+                            }
+                            if (preset.shader.layer2.patternScale !== undefined)
+                            {
+                                config.shader.layer2.patternScale = preset.shader.layer2.patternScale;
+                            }
+                            if (preset.shader.layer2.blendFactor !== undefined)
+                            {
+                                config.shader.layer2.blendFactor = preset.shader.layer2.blendFactor;
+                            }
+                        }
+                    }
+
+                    // Update all shader uniforms immediately
+                    if (orbOverlay && orbOverlay.material && orbOverlay.material.uniforms)
+                    {
+                        // Update base layer uniforms
+                        orbOverlay.material.uniforms.intensity.value = config.shader.intensity;
+                        orbOverlay.material.uniforms.noiseScale.value = config.shader.noiseScale;
+                        orbOverlay.material.uniforms.pulseSpeed.value = config.shader.pulseSpeed;
+                        orbOverlay.material.uniforms.pulseVariation.value = config.shader.pulseVariation;
+                        orbOverlay.material.uniforms.patternScale.value = config.shader.patternScale;
+                        orbOverlay.material.uniforms.fresnelPower.value = config.shader.fresnelPower;
+                        orbOverlay.material.uniforms.fresnelIntensity.value = config.shader.fresnelIntensity;
+                        orbOverlay.material.uniforms.fresnelBias.value = config.shader.fresnelBias;
+
+                        // Update main layer colors
+                        orbOverlay.material.uniforms.emberColor.value.setRGB(
+                            config.shader.emberColor[0] / 255,
+                            config.shader.emberColor[1] / 255,
+                            config.shader.emberColor[2] / 255
+                        );
+                        orbOverlay.material.uniforms.glowColor.value.setRGB(
+                            config.shader.glowColor[0] / 255,
+                            config.shader.glowColor[1] / 255,
+                            config.shader.glowColor[2] / 255
+                        );
+
+                        // Update layer 2 settings
+                        orbOverlay.material.uniforms.layer2Enabled.value = config.shader.layer2.enabled;
+                        orbOverlay.material.uniforms.layer2Intensity.value = config.shader.layer2.intensity;
+                        orbOverlay.material.uniforms.layer2NoiseScale.value = config.shader.layer2.noiseScale;
+                        orbOverlay.material.uniforms.layer2PulseSpeed.value = config.shader.layer2.pulseSpeed;
+                        orbOverlay.material.uniforms.layer2PulseVariation.value = config.shader.layer2.pulseVariation;
+                        orbOverlay.material.uniforms.layer2PatternScale.value = config.shader.layer2.patternScale;
+                        orbOverlay.material.uniforms.layer2BlendFactor.value = config.shader.layer2.blendFactor;
+
+                        // Update layer 2 colors
+                        orbOverlay.material.uniforms.layer2EmberColor.value.setRGB(
+                            config.shader.layer2.emberColor[0] / 255,
+                            config.shader.layer2.emberColor[1] / 255,
+                            config.shader.layer2.emberColor[2] / 255
+                        );
+                        orbOverlay.material.uniforms.layer2GlowColor.value.setRGB(
+                            config.shader.layer2.glowColor[0] / 255,
+                            config.shader.layer2.glowColor[1] / 255,
+                            config.shader.layer2.glowColor[2] / 255
+                        );
+
+                        // Force an update by setting time
+                        orbOverlay.material.uniforms.time.value = clock.elapsedTime;
+                    }
+                }
+
+                // Update visibility
+                if (orbOverlay)
+                {
+                    orbOverlay.visible = config.shader.enabled;
+                }
+            }
+
+            // Apply particle settings
+            if (preset.particles)
+            {
+                config.particles.enabled = preset.particles.enabled;
+
+                // Update visibility
+                if (particleSystem)
+                {
+                    particleSystem.visible = config.particles.enabled;
+                    if (config.particles.enabled && config.particles.resetSpawning)
+                    {
+                        resetParticleSystem();
+                    }
+                }
+            }
+
+            // Update GUI if needed
+            if (gui)
+            {
+                for (let i = 0; i < gui.__controllers.length; i++)
+                {
+                    gui.__controllers[i].updateDisplay();
+                }
+            }
+        }
+
+        function setupLighting()
+        {
+            // Ambient light
+            ambientLight = new THREE.AmbientLight(
+                new THREE.Color().fromArray(config.lighting.ambient.color.map(c => c / 255)),
+                config.lighting.ambient.intensity
+            );
+            scene.add(ambientLight);
+
+            // Key light (from top front)
+            keyLight = new THREE.DirectionalLight(
+                new THREE.Color().fromArray(config.lighting.key.color.map(c => c / 255)),
+                config.lighting.key.intensity
+            );
+            keyLight.position.set(...config.lighting.key.position);
+            scene.add(keyLight);
+
+            // Rim light (from bottom back)
+            rimLight = new THREE.DirectionalLight(
+                new THREE.Color().fromArray(config.lighting.rim.color.map(c => c / 255)),
+                config.lighting.rim.intensity
+            );
+            rimLight.position.set(...config.lighting.rim.position);
+            scene.add(rimLight);
+
+            // Add light helpers for visualization
+            // const keyLightHelper = new THREE.DirectionalLightHelper(keyLight, 0.5);
+            // const rimLightHelper = new THREE.DirectionalLightHelper(rimLight, 0.5);
+            // scene.add(keyLightHelper);
+            // scene.add(rimLightHelper);
+        }
+
+        function loadOrbModel()
+        {
+            // Temporary sphere as placeholder until model loads
+            const geometry = new THREE.SphereGeometry(1, 32, 32);
+            const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            orb = new THREE.Mesh(geometry, material);
+            scene.add(orb);
+
+            // Load the orb.glb model
+            const loader = new THREE.GLTFLoader();
+            loader.load('orb.glb', function (gltf)
+            {
+                // Remove placeholder sphere
+                scene.remove(orb);
+                // Get the model from the loaded GLTF
+                orb = gltf.scene;
+
+                // Scale the model if needed
+                orb.scale.set(1, 1, 1);
+
+                // Create shader material for embers effect
+                const emberShaderMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: config.shader.intensity },
+                        noiseScale: { value: config.shader.noiseScale },
+                        pulseSpeed: { value: config.shader.pulseSpeed },
+                        pulseVariation: { value: config.shader.pulseVariation },
+                        patternScale: { value: config.shader.patternScale },
+                        fresnelPower: { value: config.shader.fresnelPower },
+                        fresnelIntensity: { value: config.shader.fresnelIntensity },
+                        fresnelBias: { value: config.shader.fresnelBias },
+                        emberColor: {
+                            value: new THREE.Color(
+                                config.shader.emberColor[0] / 255,
+                                config.shader.emberColor[1] / 255,
+                                config.shader.emberColor[2] / 255
+                            )
+                        },
+                        glowColor: {
+                            value: new THREE.Color(
+                                config.shader.glowColor[0] / 255,
+                                config.shader.glowColor[1] / 255,
+                                config.shader.glowColor[2] / 255
+                            )
+                        },
+                        // Layer 2 uniforms
+                        layer2Enabled: { value: config.shader.layer2.enabled },
+                        layer2Intensity: { value: config.shader.layer2.intensity },
+                        layer2NoiseScale: { value: config.shader.layer2.noiseScale },
+                        layer2PulseSpeed: { value: config.shader.layer2.pulseSpeed },
+                        layer2PulseVariation: { value: config.shader.layer2.pulseVariation },
+                        layer2PatternScale: { value: config.shader.layer2.patternScale },
+                        layer2BlendFactor: { value: config.shader.layer2.blendFactor },
+                        layer2EmberColor: {
+                            value: new THREE.Color(
+                                config.shader.layer2.emberColor[0] / 255,
+                                config.shader.layer2.emberColor[1] / 255,
+                                config.shader.layer2.emberColor[2] / 255
+                            )
+                        },
+                        layer2GlowColor: {
+                            value: new THREE.Color(
+                                config.shader.layer2.glowColor[0] / 255,
+                                config.shader.layer2.glowColor[1] / 255,
+                                config.shader.layer2.glowColor[2] / 255
+                            )
+                        }
+                    },
+                    vertexShader: emberVertexShader,
+                    fragmentShader: emberFragmentShader,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
+
+                // Find OrbOverlay mesh or create one if not found
+                orbOverlay = orb.getObjectByName('OrbOverlay');
+
+                // Check for Speaking_Video_Texture and hide it if found
+                let Speaking_Video_Texture = orb.getObjectByName('Speaking_Video_Texture');
+                if (Speaking_Video_Texture)
+                {
+                    Speaking_Video_Texture.visible = false;
+                }
+
+                if (orbOverlay)
+                {
+                    console.log("Found OrbOverlay mesh, applying shader");
+                    orbOverlay.material = emberShaderMaterial;
+                } else
+                {
+                    console.log("OrbOverlay mesh not found, creating one");
+                    // Create a slightly larger sphere as the overlay
+                    const overlayGeometry = new THREE.SphereGeometry(1.02, 64, 64);
+                    orbOverlay = new THREE.Mesh(overlayGeometry, emberShaderMaterial);
+                    orbOverlay.name = 'OrbOverlay';
+                    orb.add(orbOverlay);
+                }
+
+                // Preserve textures but convert to non-specular materials for other meshes
+                orb.traverse(function (child)
+                {
+                    if (child.isMesh && child !== orbOverlay)
+                    {
+                        // Store original maps before replacing material
+                        const originalMaps = {};
+                        if (child.material.map) originalMaps.map = child.material.map;
+                        if (child.material.normalMap) originalMaps.normalMap = child.material.normalMap;
+                        if (child.material.emissiveMap) originalMaps.emissiveMap = child.material.emissiveMap;
+                        if (child.material.aoMap) originalMaps.aoMap = child.material.aoMap;
+
+                        // Create new material with original textures
+                        const newMaterial = new THREE.MeshStandardMaterial({
+                            color: child.material.color ? child.material.color : 0xffffff,
+                            emissive: child.material.emissive ? child.material.emissive : 0x000000,
+                            transparent: child.material.transparent || false,
+                            opacity: child.material.opacity || 1.0,
+                            roughness: 0.7,
+                            metalness: 0.2
+                        });
+
+                        // Apply original textures to new material
+                        if (originalMaps.map) newMaterial.map = originalMaps.map;
+                        if (originalMaps.normalMap) newMaterial.normalMap = originalMaps.normalMap;
+                        if (originalMaps.emissiveMap) newMaterial.emissiveMap = originalMaps.emissiveMap;
+                        if (originalMaps.aoMap) newMaterial.aoMap = originalMaps.aoMap;
+
+                        child.material = newMaterial;
+
+                        // Enable shadows
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                // Set up animations: play and loop all available clips
+                if (gltf.animations && gltf.animations.length > 0)
+                {
+                    // Create animation mixer
+                    mixer = new THREE.AnimationMixer(orb);
+
+                    // Process all animations
+                    gltf.animations.forEach((clip) =>
+                    {
+                        const action = mixer.clipAction(clip);
+                        action.setLoop(THREE.LoopRepeat, Infinity);
+                        action.timeScale = config.animation.speed;
+                        action.play();
+                        animationActions.push(action);
+                        console.log("Animation loaded:", clip.name);
+                    });
+
+                    // Debug information
+                    console.log(`Loaded ${gltf.animations.length} animations`);
+                    console.log(`Animation objects: ${mixer ? 'Mixer created' : 'No mixer'}`);
+                    console.log(`Animation actions: ${animationActions.length}`);
+                } else
+                {
+                    console.warn("No animations found in the model");
+                }
+
+                scene.add(orb);
+
+                // Add animation controls to GUI if animations exist
+                if (mixer && animationActions.length > 0)
+                {
+                    addAnimationControls();
+                }
+
+                // If config says to emit particles from mesh, update the particle system
+                if (config.particles.emitFromMesh && particleSystem)
+                {
+                    // Find the first mesh in the loaded model
+                    let meshToSample = null;
+                    orb.traverse(function (child)
+                    {
+                        if (child.isMesh && !meshToSample && child !== orbOverlay)
+                        {
+                            meshToSample = child;
+                        }
+                    });
+
+                    if (meshToSample)
+                    {
+                        console.log("Updating particles to emit from loaded mesh");
+                        // Update the existing particles to emit from the new mesh
+                        updateParticleEmitter(meshToSample);
+                    }
+                }
+            },
+                // Progress callback
+                function (xhr)
+                {
+                    console.log(`${(xhr.loaded / xhr.total * 100).toFixed(0)}% loaded`);
+                },
+                // Error callback
+                function (error)
+                {
+                    console.error('An error occurred loading the model:', error);
+                });
+        }
+
+        function updateParticleEmitter(newMesh)
+        {
+            if (!particleSystem) return;
+
+            const particles = particleSystem.userData.particles;
+
+            // Store the mesh for future particle spawning
+            particleSystem.userData.meshToSample = newMesh.geometry;
+
+            // Reset all particles and set them to inactive
+            for (let i = 0; i < particles.length; i++)
+            {
+                particles[i].active = false;
+                particles[i].age = config.particles.lifetime; // Set age to lifetime to indicate it needs respawning
+            }
+
+            // Reset spawn timer
+            particleSystem.userData.spawnTimer = 0;
+            particleSystem.userData.nextSpawnTime = 0;
+            particleSystem.userData.particlesSpawned = 0;
+        }
+
+        function createParticles()
+        {
+            // Create a temporary sphere to sample positions from
+            // (will be replaced with actual orb mesh when loaded)
+            const samplingMesh = new THREE.SphereGeometry(1, 64, 64);
+            const particleCount = config.particles.count;
+
+            // Create particle texture - this will be our glow effect
+            const particleTexture = createParticleTexture();
+
+            // Create particle material with additive blending for glow effect
+            const particleMaterial = new THREE.PointsMaterial({
+                size: config.particles.size,
+                map: particleTexture,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                // depthTest: false,  // Add this line to disable depth testing
+                depthWrite: false,
+                vertexColors: true // Allow individual particle colors
+            });
+
+            // Create geometry with custom colors
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            // Initialize an array to hold our particle data
+            const particles = [];
+
+            // Setup colors from config
+            const particleColor = new THREE.Color(
+                config.particles.color[0] / 255,
+                config.particles.color[1] / 255,
+                config.particles.color[2] / 255
+            );
+
+            // Create each particle
+            for (let i = 0; i < particleCount; i++)
+            {
+                // Create particle object
+                const particle = {
+                    position: new THREE.Vector3(),
+                    velocity: new THREE.Vector3(),
+                    originalVelocity: new THREE.Vector3(),
+                    age: config.particles.lifetime, // Start with age = lifetime so it will be respawned
+                    color: particleColor.clone(),
+                    initialColor: particleColor.clone(), // Store initial color for interpolation
+                    alpha: 0, // Starting alpha
+                    size: 1.0, // Relative size
+                    initialSize: 1.0, // Store initial size for growth
+                    active: false // Initially inactive if spawning over time
+                };
+
+                // Add to array
+                particles.push(particle);
+
+                // Set initial color (invisible)
+                colors[i * 3] = 0;
+                colors[i * 3 + 1] = 0;
+                colors[i * 3 + 2] = 0;
+
+                // Set initial position far away (invisible)
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = -1000; // Far away
+            }
+
+            // Add attributes to geometry
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            // Create points system
+            particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+
+            // Store particles data for animation
+            particleSystem.userData.particles = particles;
+            particleSystem.userData.meshToSample = samplingMesh;
+
+            // Set up spawning data
+            particleSystem.userData.spawnTimer = 0;
+            particleSystem.userData.nextSpawnTime = 0;
+            particleSystem.userData.particlesSpawned = 0;
+
+            scene.add(particleSystem);
+        }
+
+        // Create a glowing particle texture
+        function createParticleTexture()
+        {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; // Increased from 64 for higher resolution
+            canvas.height = 128;
+
+            const context = canvas.getContext('2d');
+
+            // Create radial gradient for enhanced halo effect
+            const gradient = context.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0,
+                canvas.width / 2, canvas.height / 2, canvas.width / 2
+            );
+
+            // Inner color (bright core)
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            // Inner halo
+            gradient.addColorStop(0.2, 'rgba(255, 220, 150, 0.9)');
+            // Outer halo (larger and more pronounced)
+            gradient.addColorStop(0.5, 'rgba(255, 180, 100, 0.6)');
+            // Extended glow fade
+            gradient.addColorStop(0.8, 'rgba(255, 100, 50, 0.3)');
+            // Outer edge (transparent)
+            gradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+
+            // Fill with gradient
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Create texture
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        // Function to spawn a particle
+        function respawnParticle(particle, meshToSample)
+        {
+            // Reset age
+            particle.age = 0;
+            // Set as active
+            particle.active = true;
+
+            // Set initial color from config
+            particle.initialColor.set(
+                config.particles.color[0] / 255,
+                config.particles.color[1] / 255,
+                config.particles.color[2] / 255
+            );
+            // Make it extra bright at the start
+            particle.initialColor.multiplyScalar(1.5);
+            particle.color.copy(particle.initialColor);
+
+            // Set initial size (with slight random variation)
+            particle.initialSize = config.particles.size;// + (Math.random() * 0.3);
+            particle.size = particle.initialSize;
+
+            if (config.particles.spawnInRing)
+            {
+                // Generate a position on the equator with some random variation in height
+                const radius = config.particles.ringRadius + (Math.random() * 0.125 - 0.06);
+                const equatorWidth = config.particles.equatorBandWidth;
+                const angle = Math.random() * Math.PI * 2; // Random angle around the equator
+                const heightVariation = (Math.random() * 2 - 1) * equatorWidth; // Random height variation
+
+                // Apply ring rotation
+                const rotatedAngle = angle + config.particles.ringRotation;
+
+                // Calculate position on the sphere
+                particle.position.set(
+                    radius * Math.cos(rotatedAngle),
+                    heightVariation,
+                    radius * Math.sin(rotatedAngle)
+                );
+
+                // Calculate tangential velocity (perpendicular to radial direction)
+                const tangentialSpeed = 0.005 + Math.random() * 0.01;
+                particle.velocity.set(
+                    -Math.sin(rotatedAngle) * tangentialSpeed,
+                    0,
+                    Math.cos(rotatedAngle) * tangentialSpeed
+                );
+
+                // Add a small random component to the velocity
+                particle.velocity.x += (Math.random() * 2 - 1) * 0.005;
+                particle.velocity.y += (Math.random() * 2 - 1) * 0.005;
+                particle.velocity.z += (Math.random() * 2 - 1) * 0.005;
+            } else
+            {
+                // Original code for random vertex sampling
+                const vertexIndex = Math.floor(Math.random() * (meshToSample.attributes.position.array.length / 3)) * 3;
+
+                // Set position at the vertex
+                particle.position.set(
+                    meshToSample.attributes.position.array[vertexIndex],
+                    meshToSample.attributes.position.array[vertexIndex + 1],
+                    meshToSample.attributes.position.array[vertexIndex + 2]
+                );
+
+                // Set velocity along normal or outward direction with randomness
+                if (meshToSample.attributes.normal)
+                {
+                    particle.velocity.set(
+                        meshToSample.attributes.normal.array[vertexIndex] * (0.005 + Math.random() * 0.01),
+                        meshToSample.attributes.normal.array[vertexIndex + 1] * (0.005 + Math.random() * 0.01),
+                        meshToSample.attributes.normal.array[vertexIndex + 2] * (0.005 + Math.random() * 0.01)
+                    );
+                } else
+                {
+                    // No normals, use outward direction
+                    const len = particle.position.length();
+
+                    particle.velocity.set(
+                        particle.position.x / len * (0.005 + Math.random() * 0.01),
+                        particle.position.y / len * (0.005 + Math.random() * 0.01),
+                        particle.position.z / len * (0.005 + Math.random() * 0.01)
+                    );
+                }
+            }
+
+            // Store original velocity for meandering
+            particle.originalVelocity.copy(particle.velocity);
+        }
+
+        function setupGUI()
+        {
+            gui = new dat.GUI({ autoPlace: false });
+            document.getElementById("controls").appendChild(gui.domElement);
+
+            // ======== PRESET EDITOR FOLDERS ========
+            const presetsFolder = gui.addFolder("Preset Editor");
+
+            // Preset 1 (Red+Blue) preset editor
+            const effect1Folder = presetsFolder.addFolder("Preset 1 (Red+Blue)");
+
+            // Main layer for Preset 1
+            const effect1MainFolder = effect1Folder.addFolder("Main Layer");
+            effect1MainFolder.add(config.presets.preset1.shader, "intensity", 0, 3).name("Intensity").onChange(updateActivePreset);
+            effect1MainFolder.add(config.presets.preset1.shader, "noiseScale", 0.1, 20).name("Noise Scale").onChange(updateActivePreset);
+            effect1MainFolder.add(config.presets.preset1.shader, "pulseSpeed", 0, 2).name("Pulse Speed").onChange(updateActivePreset);
+            effect1MainFolder.add(config.presets.preset1.shader, "pulseVariation", 0, 1).name("Pulse Variation").onChange(updateActivePreset);
+            effect1MainFolder.add(config.presets.preset1.shader, "patternScale", 0.5, 10).name("Pattern Scale").onChange(updateActivePreset);
+
+            // Color controls for Preset 1 main layer
+            effect1MainFolder.addColor(config.presets.preset1.shader, "emberColor").name("Ember Color").onChange(updateActivePreset);
+            effect1MainFolder.addColor(config.presets.preset1.shader, "glowColor").name("Glow Color").onChange(updateActivePreset);
+
+            // Second layer for Preset 1
+            const effect1Layer2Folder = effect1Folder.addFolder("Second Layer");
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "enabled").name("Enable Layer 2").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "intensity", 0, 3).name("Intensity").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "noiseScale", 0.1, 20).name("Noise Scale").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "pulseSpeed", 0, 2).name("Pulse Speed").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "pulseVariation", 0, 1).name("Pulse Variation").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "patternScale", 0.5, 10).name("Pattern Scale").onChange(updateActivePreset);
+            effect1Layer2Folder.add(config.presets.preset1.shader.layer2, "blendFactor", 0, 5).name("Blend Factor").onChange(updateActivePreset);
+
+            // Color controls for Preset 1 second layer
+            effect1Layer2Folder.addColor(config.presets.preset1.shader.layer2, "emberColor").name("Ember Color").onChange(updateActivePreset);
+            effect1Layer2Folder.addColor(config.presets.preset1.shader.layer2, "glowColor").name("Glow Color").onChange(updateActivePreset);
+
+            // Particles for Preset 1
+            effect1Folder.add(config.presets.preset1.particles, "enabled").name("Enable Particles").onChange(updateActivePreset);
+
+            // Preset 2 (Blue Only) preset editor
+            const effect2Folder = presetsFolder.addFolder("Preset 2 (Blue Only)");
+
+            // Main layer for Preset 2
+            const effect2MainFolder = effect2Folder.addFolder("Main Layer");
+            effect2MainFolder.add(config.presets.preset2.shader, "intensity", 0, 3).name("Intensity").onChange(updateActivePreset);
+            effect2MainFolder.add(config.presets.preset2.shader, "noiseScale", 0.1, 20).name("Noise Scale").onChange(updateActivePreset);
+            effect2MainFolder.add(config.presets.preset2.shader, "pulseSpeed", 0, 2).name("Pulse Speed").onChange(updateActivePreset);
+            effect2MainFolder.add(config.presets.preset2.shader, "pulseVariation", 0, 1).name("Pulse Variation").onChange(updateActivePreset);
+            effect2MainFolder.add(config.presets.preset2.shader, "patternScale", 0.5, 10).name("Pattern Scale").onChange(updateActivePreset);
+
+            // Color controls for Preset 2 main layer
+            effect2MainFolder.addColor(config.presets.preset2.shader, "emberColor").name("Ember Color").onChange(updateActivePreset);
+            effect2MainFolder.addColor(config.presets.preset2.shader, "glowColor").name("Glow Color").onChange(updateActivePreset);
+
+            // Second layer for Preset 2
+            const effect2Layer2Folder = effect2Folder.addFolder("Second Layer");
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "enabled").name("Enable Layer 2").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "intensity", 0, 3).name("Intensity").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "noiseScale", 0.1, 20).name("Noise Scale").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "pulseSpeed", 0, 2).name("Pulse Speed").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "pulseVariation", 0, 1).name("Pulse Variation").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "patternScale", 0.5, 10).name("Pattern Scale").onChange(updateActivePreset);
+            effect2Layer2Folder.add(config.presets.preset2.shader.layer2, "blendFactor", 0, 5).name("Blend Factor").onChange(updateActivePreset);
+
+            // Color controls for Preset 2 second layer
+            effect2Layer2Folder.addColor(config.presets.preset2.shader.layer2, "emberColor").name("Ember Color").onChange(updateActivePreset);
+            effect2Layer2Folder.addColor(config.presets.preset2.shader.layer2, "glowColor").name("Glow Color").onChange(updateActivePreset);
+
+            // Particles for Preset 2
+            effect2Folder.add(config.presets.preset2.particles, "enabled").name("Enable Particles").onChange(updateActivePreset);
+
+            // Add save button to presets folder
+            presetsFolder.add({
+                saveSettings: function ()
+                {
+                    // Update active preset to match current settings
+                    if (currentActivePreset)
+                    {
+                        console.log("Saving current settings to " + currentActivePreset + " preset");
+                        Object.assign(config.presets[currentActivePreset].shader, JSON.parse(JSON.stringify(config.shader)));
+                        Object.assign(config.presets[currentActivePreset].particles, { enabled: config.particles.enabled });
+                    } else
+                    {
+                        console.log("No active preset to save to");
+                    }
+                }
+            }, 'saveSettings').name('Save Current to Active Preset');
+
+            // ======== CURRENT SHADER CONTROLS ========
+            // Shader controls
+            const shaderFolder = gui.addFolder("Current Shader");
+            shaderFolder.add(config.shader, "enabled").name("Enable Shader").onChange(function (value)
+            {
+                if (orbOverlay)
+                {
+                    orbOverlay.visible = value;
+                }
+            });
+            shaderFolder.add(config.shader, "intensity", 0, 3).name("Intensity");
+            shaderFolder.add(config.shader, "noiseScale", 0.1, 20).name("Noise Scale");
+            shaderFolder.add(config.shader, "pulseSpeed", 0, 2).name("Pulse Speed");
+            shaderFolder.add(config.shader, "pulseVariation", 0, 1).name("Pulse Variation");
+            shaderFolder.add(config.shader, "patternScale", 0.5, 10).name("Pattern Scale");
+
+            // Add color control for shader ember color
+            const emberColorCtrl = shaderFolder.addColor(config.shader, "emberColor").name("Ember Color");
+            emberColorCtrl.onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.emberColor.value.setRGB(
+                        value[0] / 255,
+                        value[1] / 255,
+                        value[2] / 255
+                    );
+                }
+            });
+
+            // Add color control for shader glow color
+            const glowColorCtrl = shaderFolder.addColor(config.shader, "glowColor").name("Glow Color");
+            glowColorCtrl.onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.glowColor.value.setRGB(
+                        value[0] / 255,
+                        value[1] / 255,
+                        value[2] / 255
+                    );
+                }
+            });
+
+            // Layer 2 shader controls
+            const layer2Folder = shaderFolder.addFolder("Second Layer");
+            layer2Folder.add(config.shader.layer2, "enabled").name("Enable Layer 2").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2Enabled.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "intensity", 0, 3).name("Layer 2 Intensity").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2Intensity.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "noiseScale", 0.1, 20).name("Layer 2 Noise Scale").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2NoiseScale.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "pulseSpeed", 0, 2).name("Layer 2 Pulse Speed").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2PulseSpeed.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "pulseVariation", 0, 1).name("Layer 2 Pulse Var").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2PulseVariation.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "patternScale", 0.5, 10).name("Layer 2 Pattern Scale").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2PatternScale.value = value;
+                }
+            });
+            layer2Folder.add(config.shader.layer2, "blendFactor", 0, 5).name("Layer 2 Blend Factor").onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2BlendFactor.value = value;
+                }
+            });
+
+            // Add color controls for layer 2
+            const layer2EmberColorCtrl = layer2Folder.addColor(config.shader.layer2, "emberColor").name("Layer 2 Ember Color");
+            layer2EmberColorCtrl.onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2EmberColor.value.setRGB(
+                        value[0] / 255,
+                        value[1] / 255,
+                        value[2] / 255
+                    );
+                }
+            });
+
+            const layer2GlowColorCtrl = layer2Folder.addColor(config.shader.layer2, "glowColor").name("Layer 2 Glow Color");
+            layer2GlowColorCtrl.onChange(function (value)
+            {
+                if (orbOverlay && orbOverlay.material.uniforms)
+                {
+                    orbOverlay.material.uniforms.layer2GlowColor.value.setRGB(
+                        value[0] / 255,
+                        value[1] / 255,
+                        value[2] / 255
+                    );
+                }
+            });
+
+            // addParticleUIControls();
+
+            // Open the preset editor by default
+            // presetsFolder.open();
+            effect1Folder.open();
+            effect2Folder.open();
+
+            // shaderFolder.open();
+            // particleFolder.open();
+        }
+
+        function addParticleUIControls()
+        {
+            // Particle controls
+            const particleFolder = gui.addFolder("Particles");
+            particleFolder.add(config.particles, "speed", 0.01, 0.5).name("Speed");
+            particleFolder.add(config.particles, "size", 0.01, 0.1).name("Size").onChange(updateParticleSize);
+            particleFolder.add(config.particles, "meanderNoiseScale", 0, 1).name("Meander Noise Scale");
+            particleFolder.add(config.particles, "meanderStrength", 0, 1).name("Meander Strength");
+            particleFolder.add(config.particles, "lifetime", 2, 20).name("Lifetime (sec)");
+            particleFolder.add(config.particles, "growthFactor", 1, 20).name("Growth Factor");
+
+            // Ring controls
+            const ringFolder = particleFolder.addFolder("Ring Settings");
+            ringFolder.add(config.particles, "spawnInRing").name("Spawn In Ring").onChange(function ()
+            {
+                // Respawn all particles when this option changes
+                resetParticleSystem();
+            });
+            ringFolder.add(config.particles, "equatorBandWidth", 0.01, 1).name("Ring Width");
+            ringFolder.add(config.particles, "ringRadius", 0, 1.5).name("Ring Radius");
+            ringFolder.add(config.particles, "ringRotation", 0, Math.PI * 2).name("Ring Rotation");
+
+            // Spawn over time controls
+            const spawnFolder = particleFolder.addFolder("Spawn Timing");
+            spawnFolder.add(config.particles, "spawnOverTime").name("Spawn Over Time").onChange(function ()
+            {
+                resetParticleSystem();
+            });
+            spawnFolder.add(config.particles, "spawnPeriod", 0.5, 20).name("Spawn Period (sec)");
+            spawnFolder.add(config.particles, "spawnBatchSize", 1, 20, 1).name("Batch Size");
+            spawnFolder.add(config.particles, "resetSpawning").name("Reset Spawning").onChange(function ()
+            {
+                if (config.particles.resetSpawning)
+                {
+                    resetParticleSystem();
+                    // Reset the toggle
+                    config.particles.resetSpawning = false;
+                    // Update the GUI control
+                    for (let i = 0; i < gui.__controllers.length; i++)
+                    {
+                        const controller = gui.__controllers[i];
+                        if (controller.property === "resetSpawning")
+                        {
+                            controller.updateDisplay();
+                            break;
+                        }
+                    }
+                }
+            });
+
+            // Add color control for particles
+            const particleColorCtrl = particleFolder.addColor(config.particles, "color").name("Particle Color");
+            particleColorCtrl.onChange(function (value)
+            {
+                if (particleSystem)
+                {
+                    updateParticleColors();
+                }
+            });
+
+            // Add glow color control
+            const glowColorParticleCtrl = particleFolder.addColor(config.particles, "glowColor").name("Glow Color");
+            glowColorParticleCtrl.onChange(function (value)
+            {
+                if (particleSystem)
+                {
+                    particleSystem.material.map = createParticleTexture();
+                }
+            });
+            spawnFolder.open();
+        }
+
+        // Helper function to update active preset in real-time
+        function updateActivePreset()
+        {
+            // If we don't have a currently tracked preset, determine it
+            if (!currentActivePreset && orbOverlay && orbOverlay.visible)
+            {
+                if (particleSystem && particleSystem.visible)
+                {
+                    currentActivePreset = "preset1";
+                } else
+                {
+                    currentActivePreset = "preset2";
+                }
+                console.log("Detected active preset:", currentActivePreset);
+            }
+
+            // Only update if we have an active preset tracked
+            if (currentActivePreset && orbOverlay && orbOverlay.visible)
+            {
+                console.log("Applying updates to preset:", currentActivePreset);
+
+                // Apply only the current preset without changing active state
+                const preset = config.presets[currentActivePreset];
+
+                // Apply preset settings to the current shader without changing visibility
+                if (preset.shader)
+                {
+                    // Apply main shader properties
+                    if (preset.shader.intensity !== undefined) config.shader.intensity = preset.shader.intensity;
+                    if (preset.shader.noiseScale !== undefined) config.shader.noiseScale = preset.shader.noiseScale;
+                    if (preset.shader.pulseSpeed !== undefined) config.shader.pulseSpeed = preset.shader.pulseSpeed;
+                    if (preset.shader.emberColor !== undefined) config.shader.emberColor = preset.shader.emberColor;
+                    if (preset.shader.glowColor !== undefined) config.shader.glowColor = preset.shader.glowColor;
+                    if (preset.shader.pulseVariation !== undefined) config.shader.pulseVariation = preset.shader.pulseVariation;
+                    if (preset.shader.patternScale !== undefined) config.shader.patternScale = preset.shader.patternScale;
+
+                    // Apply layer 2 settings if present
+                    if (preset.shader.layer2)
+                    {
+                        if (preset.shader.layer2.enabled !== undefined) config.shader.layer2.enabled = preset.shader.layer2.enabled;
+                        if (preset.shader.layer2.intensity !== undefined) config.shader.layer2.intensity = preset.shader.layer2.intensity;
+                        if (preset.shader.layer2.noiseScale !== undefined) config.shader.layer2.noiseScale = preset.shader.layer2.noiseScale;
+                        if (preset.shader.layer2.pulseSpeed !== undefined) config.shader.layer2.pulseSpeed = preset.shader.layer2.pulseSpeed;
+                        if (preset.shader.layer2.emberColor !== undefined) config.shader.layer2.emberColor = preset.shader.layer2.emberColor;
+                        if (preset.shader.layer2.glowColor !== undefined) config.shader.layer2.glowColor = preset.shader.layer2.glowColor;
+                        if (preset.shader.layer2.pulseVariation !== undefined) config.shader.layer2.pulseVariation = preset.shader.layer2.pulseVariation;
+                        if (preset.shader.layer2.patternScale !== undefined) config.shader.layer2.patternScale = preset.shader.layer2.patternScale;
+                        if (preset.shader.layer2.blendFactor !== undefined) config.shader.layer2.blendFactor = preset.shader.layer2.blendFactor;
+                    }
+                }
+
+                // Update shader uniforms without changing visibility state
+                if (orbOverlay && orbOverlay.material && orbOverlay.material.uniforms)
+                {
+                    updateShaderUniforms();
+                }
+
+                // Update GUI to reflect changes
+                if (gui)
+                {
+                    for (let i = 0; i < gui.__controllers.length; i++)
+                    {
+                        gui.__controllers[i].updateDisplay();
+                    }
+                }
+            }
+        }
+
+        // This function is now defined at the top of the script to avoid reference errors
+
+        function resetParticleSystem()
+        {
+            if (!particleSystem) return;
+
+            const particles = particleSystem.userData.particles;
+            const meshToSample = particleSystem.userData.meshToSample;
+
+            // Reset all particles and set them to inactive
+            for (let i = 0; i < particles.length; i++)
+            {
+                particles[i].active = false;
+                particles[i].age = 0; // Set age to lifetime to indicate it needs respawning
+
+                // Hide the particles by moving them far away
+                const positions = particleSystem.geometry.attributes.position.array;
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = -1000; // Far away
+
+                // Make them invisible
+                const colors = particleSystem.geometry.attributes.color.array;
+                colors[i * 3] = 0;
+                colors[i * 3 + 1] = 0;
+                colors[i * 3 + 2] = 0;
+            }
+
+            // Update geometry
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+
+            // Reset spawn timer and counters
+            particleSystem.userData.spawnTimer = 0;
+            particleSystem.userData.nextSpawnTime = 0;
+            particleSystem.userData.particlesSpawned = 0;
+        }
+
+        function updateParticleColors()
+        {
+            if (!particleSystem) return;
+
+            const particles = particleSystem.userData.particles;
+            const colors = particleSystem.geometry.attributes.color.array;
+
+            // Set the base color from config
+            const baseColor = new THREE.Color(
+                config.particles.color[0] / 255,
+                config.particles.color[1] / 255,
+                config.particles.color[2] / 255
+            );
+
+            // Update each particle's initial color
+            for (let i = 0; i < particles.length; i++)
+            {
+                particles[i].initialColor.copy(baseColor);
+                // Make initial color brighter
+                particles[i].initialColor.multiplyScalar(1.5);
+
+                // Apply slight random variation
+                particles[i].initialColor.r *= (0.9 + Math.random() * 0.2);
+                particles[i].initialColor.g *= (0.9 + Math.random() * 0.2);
+                particles[i].initialColor.b *= (0.9 + Math.random() * 0.2);
+
+                // If particle is in early lifecycle, update its current color from the new initial color
+                if (particles[i].active && particles[i].age / config.particles.lifetime < 0.2)
+                {
+                    particles[i].color.copy(particles[i].initialColor);
+                }
+
+                // Only update the color array if particle is active
+                if (particles[i].active)
+                {
+                    const alphaMultiplier = particles[i].alpha;
+                    colors[i * 3] = particles[i].color.r * alphaMultiplier;
+                    colors[i * 3 + 1] = particles[i].color.g * alphaMultiplier;
+                    colors[i * 3 + 2] = particles[i].color.b * alphaMultiplier;
+                }
+            }
+
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+        }
+
+        function updateParticleSize(value)
+        {
+            if (particleSystem)
+            {
+                particleSystem.material.size = value;
+            }
+        }
+
+        function updateParticleCount(value)
+        {
+            // This requires recreating the particle system
+            config.particles.count = value;
+
+            if (particleSystem)
+            {
+                scene.remove(particleSystem);
+                createParticles();
+
+                // If we have a mesh loaded, update the particle emitter
+                if (orb && orb.traverse)
+                {
+                    let meshToSample = null;
+                    orb.traverse(function (child)
+                    {
+                        if (child.isMesh && !meshToSample && child !== orbOverlay)
+                        {
+                            meshToSample = child;
+                        }
+                    });
+
+                    if (meshToSample && config.particles.emitFromMesh)
+                    {
+                        updateParticleEmitter(meshToSample);
+                    }
+                }
+            }
+        }
+
+        function addAnimationControls()
+        {
+            // Find the dat.GUI instance
+            if (!gui) return;
+
+            const animationFolder = gui.addFolder("Animation");
+
+            animationFolder.add(config.animation, "enabled").name("Animation Enabled").onChange((value) =>
+            {
+                animationActions.forEach(action =>
+                {
+                    if (value)
+                    {
+                        action.play();
+                    } else
+                    {
+                        action.stop();
+                    }
+                });
+            });
+
+            animationFolder.add(config.animation, "speed", 0, 3).name("Animation Speed").onChange((value) =>
+            {
+                if (mixer)
+                {
+                    animationActions.forEach(action =>
+                    {
+                        action.timeScale = value;
+                    });
+                }
+            });
+
+            // animationFolder.open();
+        }
+
+        function updateLighting()
+        {
+            ambientLight.intensity = config.lighting.ambient.intensity;
+            ambientLight.color.fromArray(config.lighting.ambient.color.map(c => c / 255));
+
+            keyLight.intensity = config.lighting.key.intensity;
+            keyLight.color.fromArray(config.lighting.key.color.map(c => c / 255));
+            keyLight.position.set(...config.lighting.key.position);
+
+            rimLight.intensity = config.lighting.rim.intensity;
+            rimLight.color.fromArray(config.lighting.rim.color.map(c => c / 255));
+            rimLight.position.set(...config.lighting.rim.position);
+        }
+
+        function updateShaderUniforms()
+        {
+            if (orbOverlay && orbOverlay.material && orbOverlay.material.uniforms)
+            {
+                // Update base layer uniforms
+                orbOverlay.material.uniforms.time.value = clock.elapsedTime;
+                orbOverlay.material.uniforms.intensity.value = config.shader.intensity;
+                orbOverlay.material.uniforms.noiseScale.value = config.shader.noiseScale;
+                orbOverlay.material.uniforms.pulseSpeed.value = config.shader.pulseSpeed;
+                orbOverlay.material.uniforms.pulseVariation.value = config.shader.pulseVariation;
+                orbOverlay.material.uniforms.patternScale.value = config.shader.patternScale;
+                orbOverlay.material.uniforms.fresnelPower.value = config.shader.fresnelPower;
+                orbOverlay.material.uniforms.fresnelIntensity.value = config.shader.fresnelIntensity;
+                orbOverlay.material.uniforms.fresnelBias.value = config.shader.fresnelBias;
+
+                // Update layer 2 uniforms
+                orbOverlay.material.uniforms.layer2Enabled.value = config.shader.layer2.enabled;
+                orbOverlay.material.uniforms.layer2Intensity.value = config.shader.layer2.intensity;
+                orbOverlay.material.uniforms.layer2NoiseScale.value = config.shader.layer2.noiseScale;
+                orbOverlay.material.uniforms.layer2PulseSpeed.value = config.shader.layer2.pulseSpeed;
+                orbOverlay.material.uniforms.layer2PulseVariation.value = config.shader.layer2.pulseVariation;
+                orbOverlay.material.uniforms.layer2PatternScale.value = config.shader.layer2.patternScale;
+                orbOverlay.material.uniforms.layer2BlendFactor.value = config.shader.layer2.blendFactor;
+            }
+        }
+
+        function updateParticles(delta)
+        {
+            if (!particleSystem) return;
+
+            const particles = particleSystem.userData.particles;
+            const positions = particleSystem.geometry.attributes.position.array;
+            const colors = particleSystem.geometry.attributes.color.array;
+            const time = clock.elapsedTime;
+            const meshToSample = particleSystem.userData.meshToSample;
+
+            // Update spawning timer
+            particleSystem.userData.spawnTimer += delta;
+
+            // Handle spawning of particles over time
+            if (config.particles.spawnOverTime &&
+                particleSystem.userData.particlesSpawned < particles.length)
+            {
+                // Check if it's time to spawn the next batch
+                if (particleSystem.userData.spawnTimer >= particleSystem.userData.nextSpawnTime)
+                {
+                    // Calculate how many particles to spawn in this batch
+                    const batchSize = Math.min(
+                        config.particles.spawnBatchSize,
+                        particles.length - particleSystem.userData.particlesSpawned
+                    );
+
+                    // Spawn the batch
+                    for (let i = 0; i < batchSize; i++)
+                    {
+                        const particleIndex = particleSystem.userData.particlesSpawned;
+                        if (particleIndex < particles.length)
+                        {
+                            respawnParticle(particles[particleIndex], meshToSample);
+                            particleSystem.userData.particlesSpawned++;
+                        }
+                    }
+
+                    // Calculate next spawn time
+                    // Distribute spawns evenly across the spawn period
+                    const totalBatches = Math.ceil(particles.length / config.particles.spawnBatchSize);
+                    const timePerBatch = config.particles.spawnPeriod / totalBatches;
+                    particleSystem.userData.nextSpawnTime += timePerBatch;
+                }
+            }
+
+            // Common vector for noise calculations
+            const noiseVec = new THREE.Vector3();
+
+            // Target red color for transition
+            const targetRedColor = new THREE.Color(1, 0, 0);
+
+            // Update each particle
+            for (let i = 0; i < particles.length; i++)
+            {
+                const particle = particles[i];
+
+                // Skip inactive particles
+                if (!particle.active)
+                {
+                    // Keep inactive particles far away and invisible
+                    positions[i * 3] = 0;
+                    positions[i * 3 + 1] = 0;
+                    positions[i * 3 + 2] = -1000;
+
+                    colors[i * 3] = 0;
+                    colors[i * 3 + 1] = 0;
+                    colors[i * 3 + 2] = 0;
+                    continue;
+                }
+
+                // Update particle age
+                particle.age += delta;
+
+                // If lifetime expired, respawn particle
+                if (particle.age >= config.particles.lifetime)
+                {
+                    // When using spawn over time, just deactivate the particle
+                    if (config.particles.spawnOverTime)
+                    {
+                        particle.active = false;
+                        // Keep inactive particles far away and invisible
+                        positions[i * 3] = 0;
+                        positions[i * 3 + 1] = 0;
+                        positions[i * 3 + 2] = -1000;
+
+                        colors[i * 3] = 0;
+                        colors[i * 3 + 1] = 0;
+                        colors[i * 3 + 2] = 0;
+                        continue;
+                    } else
+                    {
+                        // Otherwise, respawn immediately
+                        respawnParticle(particle, meshToSample);
+                    }
+                } else
+                {
+                    // Calculate lifecycle phase (0 to 1)
+                    const lifecycle = particle.age / config.particles.lifetime;
+
+                    // Fade in and out with longer brightness period
+                    if (lifecycle < 0.05)
+                    {
+                        // Fade in (first 10% of lifetime)
+                        particle.alpha = lifecycle * 10;
+                    } else
+                    {
+                        // Fade out (last 20% of lifetime)
+                        particle.alpha = (1 - lifecycle); // Faster fade out
+                        const flicker = Math.sin(particle.age * 10 + i) * 0.1;
+                        particle.alpha *= particle.alpha + flicker;
+                    }
+
+                    // Grow the particle over lifetime
+                    particle.size = particle.initialSize * (1 + (lifecycle * config.particles.growthFactor));
+                    particleSystem.material.size = particle.size;
+
+                    // Transition color from initial (bright) to red
+                    particle.color.copy(particle.initialColor).lerp(targetRedColor, lifecycle);
+
+                    // Generate meandering motion using noise
+                    // Use particle position and time to create varied meandering paths
+                    const noiseScale = config.particles.meanderNoiseScale;
+                    const meanderStrength = config.particles.meanderStrength;
+
+                    // Simple noise approximation for meandering motion
+                    noiseVec.set(
+                        Math.sin(particle.position.x * noiseScale + time * 0.5) * 0.02 * meanderStrength,
+                        Math.cos(particle.position.y * noiseScale + time * 0.4) * 0.02 * meanderStrength,
+                        Math.sin(particle.position.z * noiseScale + time * 0.6) * 0.02 * meanderStrength
+                    );
+
+                    // Calculate current velocity by adding meandering to original velocity
+                    const currentVelocity = particle.originalVelocity.clone()
+                        .add(noiseVec)
+                        .multiplyScalar(config.particles.speed);
+
+                    // Apply velocity
+                    particle.position.add(currentVelocity);
+
+                    // Apply a gentle attraction to keep particles from wandering too far
+                    const distanceFromCenter = particle.position.length();
+                    if (distanceFromCenter > 3.0)
+                    {
+                        const pullBackForce = particle.position.clone().normalize().multiplyScalar(-0.005 * (distanceFromCenter - 3.0));
+                        particle.position.add(pullBackForce);
+                    }
+                }
+
+                // Update position in geometry
+                positions[i * 3] = particle.position.x;
+                positions[i * 3 + 1] = particle.position.y;
+                positions[i * 3 + 2] = particle.position.z;
+
+                // Apply alpha to color brightness
+                const alphaMultiplier = particle.alpha;
+                colors[i * 3] = particle.color.r * alphaMultiplier;
+                colors[i * 3 + 1] = particle.color.g * alphaMultiplier;
+                colors[i * 3 + 2] = particle.color.b * alphaMultiplier;
+            }
+
+            // Update geometry
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+        }
+
+        function onWindowResize()
+        {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate()
+        {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Update animation mixer if it exists
+            if (mixer && config.animation.enabled)
+            {
+                mixer.update(delta);
+            }
+
+            // Update shader uniforms if shader is enabled
+            if (config.shader.enabled)
+            {
+                updateShaderUniforms();
+            }
+
+            // Update particles if particles are enabled
+            if (config.particles.enabled)
+            {
+                updateParticles(delta);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+
+</html>
