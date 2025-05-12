@@ -2,7 +2,7 @@
 <html>
 
 <head>
-  <title>Three.js Flow Noise Shader - Unified Lighting</title>
+  <title>ChatBot</title>
   <style>
     body {
       margin: 0;
@@ -50,16 +50,13 @@
 </head>
 
 <body>
-  <div id="info">
-    Flow Noise Displacement (LF) + Flow Noise Normals (HF)<br>
-    Unified Lighting System. Drag to rotate. Scroll to zoom.
-  </div>
+  <div id="info">Drag to rotate. Scroll to zoom.</div>
   <script type="importmap">
         {
             "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
-                "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.js"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.176.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/",
+                "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.20.0/dist/lil-gui.esm.js"
             }
         }
     </script>
@@ -300,7 +297,7 @@
 
       if (!animationStartTime) animationStartTime = performance.now();
 
-      const sphereGeometry = new THREE.SphereGeometry(1, 96, 96);
+      const sphereGeometry = new THREE.SphereGeometry(1, 64, 64);
       // IMPORTANT: Ensure your geometry has UVs. SphereGeometry has them by default.
       // If using a custom geometry, make sure it has UV attributes.
       sphereGeometry.computeTangents();
@@ -366,7 +363,7 @@
         uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
         uLights: { value: lightsUniformValue },
         uNumLights: { value: numActiveLightsForShader },
-        uShininessMap: { value: shininessTexture } // << ADD TEXTURE TO UNIFORMS
+        uShininessMap: { value: shininessTexture }
       };
 
       const mainMaterial = new THREE.ShaderMaterial({
@@ -412,6 +409,37 @@
       lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { sphere.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
       lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { sphere.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
 
+      // --- START: Added Periodic Settings ---
+      const lfPeriodicFolder = lfFolder.addFolder('Periodic Tiling');
+      lfPeriodicFolder.add(guiParams, 'lfEnablePeriodic').name('Enable Periodic Tiling')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uEnablePeriodicLf.value = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthX', 1.0, 20.0, 0.1).name('Period Length X')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.x = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthY', 1.0, 20.0, 0.1).name('Period Length Y')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.y = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthZ', 1.0, 20.0, 0.1).name('Period Length Z')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.z = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.close(); // Close by default unless needed open
+      // --- END: Added Periodic Settings ---
+
+      lfFolder.open(); // Keep the main LF folder open
+
       const colorFolder = gui.addFolder('Surface Colors');
       colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { sphere.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
       colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { sphere.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
@@ -422,6 +450,7 @@
       colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.01).name('Trough Gamma').onChange(v => { sphere.material.uniforms.uTroughGamma.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.001).name('Color Noise Scale').onChange(v => { sphere.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 0.5, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
+      colorFolder.close(); // Close Color folder by default
 
       const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
       hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { sphere.material.uniforms.uHfEnable.value = v; saveSettings(); });
@@ -436,6 +465,8 @@
       hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { sphere.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
       hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 10.0, 0.01).name('HF Flow Strength').onChange(v => { sphere.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
       hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { sphere.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
+      hfFlowFolder.close(); // Close HF flow by default
+      hfFolder.close(); // Close HF folder by default
 
       const lightingFolder = gui.addFolder('Lighting System');
       lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.01).name('Ambient Intensity')
@@ -448,6 +479,8 @@
           {
             const newNumActive = Math.min(v, MAX_LIGHTS_IN_SHADER);
             sphere.material.uniforms.uNumLights.value = newNumActive;
+            // Ensure the enabled state in the shader matches the gui state
+            // for the newly active/inactive lights
             for (let k = 0; k < MAX_LIGHTS_IN_SHADER; k++)
             {
               if (k < newNumActive)
@@ -455,9 +488,10 @@
                 sphere.material.uniforms.uLights.value[k].enabled = guiParams.lights[k].enabled;
               } else
               {
-                sphere.material.uniforms.uLights.value[k].enabled = false;
+                sphere.material.uniforms.uLights.value[k].enabled = false; // Force disable in shader if beyond count
               }
             }
+            // Optionally: Visually enable/disable the folders in the GUI (more complex)
           }
           saveSettings();
         });
@@ -465,12 +499,20 @@
       for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
       {
         const lightGuiParams = guiParams.lights[i];
+        // Ensure light uniform exists before accessing (should always be true after init)
+        if (!sphere || !sphere.material || !sphere.material.uniforms.uLights || !sphere.material.uniforms.uLights.value[i])
+        {
+          console.error(`Cannot setup GUI for light ${i}: Uniforms not ready.`);
+          continue; // Skip this light if something is wrong
+        }
         const lightUniformRef = sphere.material.uniforms.uLights.value[i];
         const lightFolder = lightingFolder.addFolder(lightGuiParams.name || `Light ${i + 1}`);
+
         lightFolder.add(lightGuiParams, 'enabled').name('Enabled (if active)')
           .onChange(v =>
           {
-            lightGuiParams.enabled = v;
+            lightGuiParams.enabled = v; // Update the guiParams state
+            // Only update the shader uniform if this light is within the active count
             if (i < sphere.material.uniforms.uNumLights.value)
             {
               lightUniformRef.enabled = v;
@@ -493,6 +535,7 @@
           .onChange(v => { lightUniformRef.specularContribution = v; saveSettings(); });
         contributionsFolder.add(lightGuiParams, 'specularShininess', 1.0, 512.0, 1.0).name('Shininess (Base)') // << UPDATED NAME
           .onChange(v => { lightUniformRef.specularShininess = v; saveSettings(); });
+        contributionsFolder.close(); // Close by default
 
         const positionFolder = lightFolder.addFolder('Position (View Space)');
         positionFolder.add(lightGuiParams.position, 'x', -30, 30, 0.1).name('X')
@@ -501,28 +544,31 @@
           .onChange(v => { lightUniformRef.position.y = v; saveSettings(); });
         positionFolder.add(lightGuiParams.position, 'z', -30, 30, 0.1).name('Z')
           .onChange(v => { lightUniformRef.position.z = v; saveSettings(); });
+        positionFolder.close(); // Close by default
 
         const hfNormalsFolder = lightFolder.addFolder('HF Normal Influence');
         hfNormalsFolder.add(lightGuiParams, 'diffuseHfNormalAmount', 0.0, 1.0, 0.01).name('Diffuse HF Amt')
           .onChange(v => { lightUniformRef.diffuseHfNormalAmount = v; saveSettings(); });
         hfNormalsFolder.add(lightGuiParams, 'specularHfNormalAmount', 0.0, 1.0, 0.01).name('Specular HF Amt')
           .onChange(v => { lightUniformRef.specularHfNormalAmount = v; saveSettings(); });
+        hfNormalsFolder.close(); // Close by default
 
-        if (i >= guiParams.numLights)
-        {
+        // Close light folders by default, maybe open the first one if active
+        if (i >= guiParams.numLights || i > 0)
+        { // Close if inactive or not the first light
           lightFolder.close();
-        } else if (i > 0)
+        } else if (i === 0)
         {
-          lightFolder.close();
+          lightFolder.open(); // Keep first light folder open if active
         }
       }
-      lightingFolder.open();
+      lightingFolder.open(); // Keep the main Lighting folder open
 
 
       const sceneFolder = gui.addFolder('Scene & Camera');
       sceneFolder.add(guiParams, 'autoRotate').name('Auto Rotate').onChange(v => { controls.autoRotate = v; saveSettings(); });
       sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.01).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
-      sceneFolder.open();
+      sceneFolder.open(); // Keep Scene folder open
 
       gui.controllersRecursive().forEach(controller =>
       {
