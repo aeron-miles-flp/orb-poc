@@ -1,0 +1,416 @@
+{
+    "lighting": {
+        "ambient": {
+            "intensity": 0.4,
+            "color": [
+                255,
+                255,
+                255
+            ]
+        },
+        "key": {
+            "intensity": 0.6,
+            "color": [
+                255,
+                255,
+                255
+            ],
+            "position": [
+                2,
+                3,
+                3
+            ]
+        },
+        "rim": {
+            "intensity": 2,
+            "color": [
+                100,
+                150,
+                255
+            ],
+            "position": [
+                -10,
+                -2,
+                -2
+            ]
+        }
+    },
+    "particles": {
+        "enabled": false,
+        "count": 75,
+        "size": 0.05,
+        "speed": 0.01,
+        "color": [
+            255,
+            130,
+            130
+        ],
+        "glowColor": [
+            255,
+            0,
+            0
+        ],
+        "emitFromMesh": true,
+        "lifetime": 18.0,
+        "meanderNoiseScale": 0.1,
+        "meanderStrength": 0.1,
+        "growthFactor": 12,
+        "spawnInRing": true,
+        "equatorBandWidth": 0.15,
+        "ringRadius": 0.45,
+        "ringRotation": 0,
+        "spawnOverTime": true,
+        "spawnPeriod": 2.0,
+        "spawnBatchSize": 12,
+        "resetSpawning": false
+    },
+    "shader": {
+        "enabled": true,
+        "intensity": 0.88,
+        "noiseScale": 10,
+        "pulseSpeed": 0.1,
+        "emberColor": [
+            255,
+            90,
+            0
+        ],
+        "glowColor": [
+            255,
+            0,
+            0
+        ],
+        "pulseVariation": 1.0,
+        "patternScale": 1.0,
+        "displacementAmount": 0.025,
+        "fresnelPower": 2.0,
+        "fresnelIntensity": 1.5,
+        "fresnelBias": 0.1,
+        "layer2": {
+            "enabled": true,
+            "intensity": 0.67,
+            "noiseScale": 20,
+            "pulseSpeed": 0.25,
+            "emberColor": [
+                50,
+                180,
+                255
+            ],
+            "glowColor": [
+                0,
+                70,
+                230
+            ],
+            "pulseVariation": 0.7,
+            "patternScale": 5,
+            "blendFactor": 2
+        }
+    },
+    "presets": {
+        "preset1": {
+            "shader": {
+                "enabled": true,
+                "intensity": 0.91,
+                "noiseScale": 10,
+                "pulseSpeed": 0.1,
+                "emberColor": [
+                    255,
+                    90,
+                    0
+                ],
+                "glowColor": [
+                    255,
+                    0,
+                    0
+                ],
+                "pulseVariation": 1.0,
+                "patternScale": 1.0,
+                "displacementAmount": 0.015,
+                "fresnelPower": 2.0,
+                "fresnelIntensity": 1.5,
+                "fresnelBias": 0.1,
+                "layer2": {
+                    "enabled": true,
+                    "intensity": 0.71,
+                    "noiseScale": 10,
+                    "pulseSpeed": 0.25,
+                    "emberColor": [
+                        50,
+                        180,
+                        255
+                    ],
+                    "glowColor": [
+                        0,
+                        70,
+                        230
+                    ],
+                    "pulseVariation": 0.7,
+                    "patternScale": 5,
+                    "blendFactor": 1.0
+                }
+            },
+            "particles": {
+                "enabled": false
+            }
+        },
+        "preset2": {
+            "shader": {
+                "enabled": true,
+                "intensity": 0.6,
+                "noiseScale": 20,
+                "pulseSpeed": 0.15,
+                "emberColor": [
+                    0,
+                    30,
+                    160
+                ],
+                "glowColor": [
+                    0,
+                    30,
+                    90
+                ],
+                "pulseVariation": 1.0,
+                "patternScale": 1.0,
+                "displacementAmount": 0.015,
+                "fresnelPower": 2.0,
+                "fresnelIntensity": 1.5,
+                "fresnelBias": 0.1,
+                "layer2": {
+                    "enabled": true,
+                    "intensity": 0.6,
+                    "noiseScale": 20,
+                    "pulseSpeed": 0.25,
+                    "emberColor": [
+                        50,
+                        180,
+                        255
+                    ],
+                    "glowColor": [
+                        0,
+                        70,
+                        230
+                    ],
+                    "pulseVariation": 1,
+                    "patternScale": 7,
+                    "blendFactor": 5
+                }
+            },
+            "particles": {
+                "enabled": false
+            }
+        }
+    },
+    "lightingPresets": {
+        "idle": {
+            "ambient": {
+                "color": [
+                    200,
+                    200,
+                    200
+                ],
+                "intensity": 0.5
+            },
+            "key": {
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "intensity": 1.0,
+                "position": [
+                    0,
+                    1,
+                    1
+                ]
+            },
+            "rim": {
+                "color": [
+                    255,
+                    200,
+                    200
+                ],
+                "intensity": 0.2,
+                "position": [
+                    0,
+                    -1,
+                    -1
+                ]
+            },
+            "animation": {
+                "pulse": {
+                    "ambient": {
+                        "amplitude": 0.05,
+                        "speed": 1.0
+                    },
+                    "key": {
+                        "amplitude": 0.1,
+                        "speed": 1.0
+                    },
+                    "rim": {
+                        "amplitude": 0.05,
+                        "speed": 1.0
+                    }
+                }
+            }
+        },
+        "listening": {
+            "ambient": {
+                "color": [
+                    180,
+                    180,
+                    255
+                ],
+                "intensity": 0.6
+            },
+            "key": {
+                "color": [
+                    200,
+                    200,
+                    255
+                ],
+                "intensity": 1.2,
+                "position": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "rim": {
+                "color": [
+                    150,
+                    150,
+                    255
+                ],
+                "intensity": 0.3,
+                "position": [
+                    -1,
+                    1,
+                    -1
+                ]
+            },
+            "animation": {
+                "pulse": {
+                    "ambient": {
+                        "amplitude": 0.08,
+                        "speed": 2.0
+                    },
+                    "key": {
+                        "amplitude": 0.15,
+                        "speed": 2.0
+                    },
+                    "rim": {
+                        "amplitude": 0.1,
+                        "speed": 2.0
+                    }
+                }
+            }
+        },
+        "thinking": {
+            "ambient": {
+                "color": [
+                    100,
+                    100,
+                    150
+                ],
+                "intensity": 0.4
+            },
+            "key": {
+                "color": [
+                    120,
+                    120,
+                    200
+                ],
+                "intensity": 0.8,
+                "position": [
+                    0,
+                    2,
+                    2
+                ]
+            },
+            "rim": {
+                "color": [
+                    80,
+                    80,
+                    120
+                ],
+                "intensity": 0.2,
+                "position": [
+                    0,
+                    -2,
+                    -2
+                ]
+            },
+            "animation": {
+                "pulse": {
+                    "ambient": {
+                        "amplitude": 0.05,
+                        "speed": 1.5
+                    },
+                    "key": {
+                        "amplitude": 0.12,
+                        "speed": 1.5
+                    },
+                    "rim": {
+                        "amplitude": 0.06,
+                        "speed": 1.5
+                    }
+                }
+            }
+        },
+        "speaking": {
+            "ambient": {
+                "color": [
+                    255,
+                    230,
+                    200
+                ],
+                "intensity": 0.7
+            },
+            "key": {
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "intensity": 1.5,
+                "position": [
+                    0,
+                    3,
+                    1
+                ]
+            },
+            "rim": {
+                "color": [
+                    255,
+                    150,
+                    150
+                ],
+                "intensity": 0.4,
+                "position": [
+                    0,
+                    -3,
+                    -1
+                ]
+            },
+            "animation": {
+                "pulse": {
+                    "ambient": {
+                        "amplitude": 0.1,
+                        "speed": 3.0
+                    },
+                    "key": {
+                        "amplitude": 0.2,
+                        "speed": 3.0
+                    },
+                    "rim": {
+                        "amplitude": 0.15,
+                        "speed": 3.0
+                    }
+                }
+            }
+        }
+    },
+    "animation": {
+        "enabled": true,
+        "speed": 0.35
+    }
+}

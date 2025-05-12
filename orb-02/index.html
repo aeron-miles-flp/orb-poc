@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Three.js Flow Noise Shader - Unified Lighting</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #222;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.75);
+      color: white;
+      border-radius: 8px;
+      z-index: 100;
+      font-size: 12px;
+      max-width: 300px;
+    }
+
+    .lil-gui {
+      top: 10px;
+      right: 10px;
+      max-height: calc(100vh - 20px);
+      /* Ensure GUI fits on screen */
+      overflow-y: auto;
+      border-radius: 8px;
+      --widget-padding: 5px;
+      /* Adjust padding for a slightly more compact look */
+      --folder-indent: 10px;
+      --font-size: 11px;
+    }
+
+    .lil-gui.root>.children>.lil-gui>.title {
+      font-size: 13px;
+      /* Slightly larger for main folder titles */
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div id="info">
+    Flow Noise Displacement (LF) + Flow Noise Normals (HF)<br>
+    Unified Lighting System. Drag to rotate. Scroll to zoom.
+  </div>
+  <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
+                "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.js"
+            }
+        }
+    </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    let scene, camera, renderer, sphere, controls;
+    let animationStartTime;
+    let gui;
+    const SETTINGS_KEY = 'flowNoiseShaderSettings_v4';
+
+    let fetchedDefaultSettings = {};
+    let guiParams = {};
+
+    const MAX_LIGHTS_IN_SHADER = 4;
+
+    let mainVertexShader, mainFragmentShader;
+    let shininessTexture; // << NEW VARIABLE FOR TEXTURE
+
+    async function fetchExternalDefaultSettings()
+    {
+      try
+      {
+        const response = await fetch('default-settings.json');
+        if (!response.ok)
+        {
+          throw new Error(`HTTP error! status: ${response.status} while fetching default-settings.json`);
+        }
+        fetchedDefaultSettings = await response.json();
+        console.log("Default settings loaded from default-settings.json");
+      } catch (e)
+      {
+        console.error("CRITICAL ERROR fetching default-settings.json. Application might not work as expected.", e);
+        document.getElementById('info').innerHTML = `Error loading default settings from JSON: ${e.message}. Please check console. App may be unstable. Using minimal fallbacks.`;
+        fetchedDefaultSettings = {
+          vertexDisplacementScale: 0.1, animationSpeed: 1.0, autoRotate: true, autoRotateSpeed: 0.2,
+          sceneBackgroundColor: 0x202025, cameraFov: 60, cameraPosition: { x: 0, y: 0.75, z: 3.0 },
+          cameraMinDistance: 1.0, cameraMaxDistance: 15.0,
+          lfMasterScale: 0.1, lfPatternTimeScale: 0.03, lfOctaves: 3, lfLacunarity: 2.0, lfPersistence: 0.5,
+          lfNoiseContrastLower: 0.0, lfNoiseContrastUpper: 1.0, lfNormalStrength: 0.15,
+          lfFlowScale: 0.5, lfFlowStrength: 1.0, lfFlowTimeScale: 0.05,
+          lfEnablePeriodic: false, lfPeriodicLengthX: 10, lfPeriodicLengthY: 10, lfPeriodicLengthZ: 10,
+          hfEnable: true, hfMasterScale: 5.0, hfPatternTimeScale: 0.1, hfOctaves: 3, hfLacunarity: 2.0, hfPersistence: 0.5,
+          hfNormalStrength: 0.05, hfFlowScale: 3.0, hfFlowStrength: 0.5, hfFlowTimeScale: 0.08,
+          color1: { r: 0.8, g: 0.2, b: 0.1 }, color2: { r: 0.1, g: 0.7, b: 0.3 }, color3: { r: 0.2, g: 0.3, b: 0.9 },
+          troughColorMultiplier: { r: 0.5, g: 0.5, b: 0.5 },
+          troughMin: 0.0, troughMax: 0.5, troughGamma: 1.0,
+          colorNoiseScale: 0.5, colorNoiseTimeScale: 0.05,
+          ambientIntensity: 0.1, numLights: 1,
+          lights: [
+            {
+              name: "Default Light 1", enabled: true, color: { r: 1.0, g: 1.0, b: 1.0 }, intensity: 1.0,
+              diffuseContribution: 1.0, specularContribution: 0.5, specularShininess: 32.0,
+              position: { x: 5.0, y: 5.0, z: 5.0 }, diffuseHfNormalAmount: 1.0, specularHfNormalAmount: 1.0
+            }
+          ]
+        };
+      }
+    }
+
+    function loadSettings()
+    {
+      if (Object.keys(fetchedDefaultSettings).length === 0)
+      {
+        console.warn("Fetched default settings are empty at the start of loadSettings.");
+      }
+
+      const baseDefaults = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+      const savedSettingsFromStorage = localStorage.getItem(SETTINGS_KEY);
+
+      if (savedSettingsFromStorage)
+      {
+        try
+        {
+          const parsedLocalStorageSettings = JSON.parse(savedSettingsFromStorage);
+          guiParams = { ...baseDefaults, ...parsedLocalStorageSettings };
+          const nestedObjectKeys = ['color1', 'color2', 'color3', 'troughColorMultiplier', 'cameraPosition'];
+          for (const key of nestedObjectKeys)
+          {
+            if (baseDefaults[key] && typeof baseDefaults[key] === 'object')
+            {
+              guiParams[key] = { ...baseDefaults[key], ...(parsedLocalStorageSettings[key] || {}) };
+            }
+          }
+          if (Array.isArray(parsedLocalStorageSettings.lights))
+          {
+            guiParams.lights = JSON.parse(JSON.stringify(parsedLocalStorageSettings.lights));
+          } else if (!Array.isArray(guiParams.lights))
+          {
+            guiParams.lights = Array.isArray(baseDefaults.lights) ? JSON.parse(JSON.stringify(baseDefaults.lights)) : [];
+          }
+          console.log("Settings loaded from localStorage and merged with JSON defaults.");
+        } catch (e)
+        {
+          console.error("Error parsing saved settings from localStorage. Using JSON defaults.", e);
+          guiParams = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+        }
+      } else
+      {
+        console.log("No saved settings found in localStorage. Using JSON defaults.");
+        guiParams = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+      }
+
+      if (typeof guiParams.numLights !== 'number' || guiParams.numLights < 0 || guiParams.numLights > MAX_LIGHTS_IN_SHADER)
+      {
+        console.warn(`guiParams.numLights ('${guiParams.numLights}') is invalid. Resetting based on defaults or to 0.`);
+        if (typeof baseDefaults.numLights === 'number' && baseDefaults.numLights >= 0 && baseDefaults.numLights <= MAX_LIGHTS_IN_SHADER)
+        {
+          guiParams.numLights = baseDefaults.numLights;
+        } else
+        {
+          guiParams.numLights = 0;
+        }
+      }
+
+      if (!Array.isArray(guiParams.lights))
+      {
+        console.warn("guiParams.lights is not an array. Initializing as empty array.");
+        guiParams.lights = [];
+      }
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        if (!guiParams.lights[i] || typeof guiParams.lights[i] !== 'object')
+        {
+          const defaultLightConfig = (baseDefaults.lights && baseDefaults.lights[i]) ?
+            JSON.parse(JSON.stringify(baseDefaults.lights[i])) :
+            {
+              name: `Light ${i + 1}`, enabled: false, color: { r: 0.5, g: 0.5, b: 0.5 }, intensity: 0.0,
+              diffuseContribution: 0.0, specularContribution: 0.0, specularShininess: 32,
+              position: { x: 0, y: 0, z: (i + 1) * 2.0 },
+              diffuseHfNormalAmount: 1.0, specularHfNormalAmount: 1.0
+            };
+          guiParams.lights[i] = defaultLightConfig;
+          if (!guiParams.lights[i].name) guiParams.lights[i].name = `Light ${i + 1}`;
+        } else if (!guiParams.lights[i].name)
+        {
+          guiParams.lights[i].name = `Light ${i + 1} (User)`;
+        }
+      }
+      if (guiParams.lights.length > MAX_LIGHTS_IN_SHADER)
+      {
+        guiParams.lights.length = MAX_LIGHTS_IN_SHADER;
+      }
+    }
+
+    function saveSettings()
+    {
+      try
+      {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(guiParams));
+        console.log("Settings saved to localStorage.");
+      } catch (e)
+      {
+        console.error("Error saving settings to localStorage.", e);
+      }
+    }
+
+    async function fetchShader(url)
+    {
+      const response = await fetch(url);
+      if (!response.ok)
+      {
+        throw new Error(`Failed to fetch shader: ${url} ${response.statusText}`);
+      }
+      return response.text();
+    }
+
+    // Function to load textures
+    async function loadTextures()
+    { // << NEW FUNCTION
+      const textureLoader = new THREE.TextureLoader();
+      try
+      {
+        shininessTexture = await textureLoader.loadAsync('./smoothness.jpg'); // << LOAD TEXTURE
+        shininessTexture.wrapS = THREE.RepeatWrapping;
+        shininessTexture.wrapT = THREE.RepeatWrapping;
+        console.log("Shininess texture loaded successfully.");
+      } catch (error)
+      {
+        console.error("Error loading shininess texture:", error);
+        document.getElementById('info').innerHTML += `<br>Error loading shininess.jpg: ${error.message}. Specular shininess might not work as intended.`;
+        // Optionally, provide a fallback plain white texture or handle the error in shader uniforms
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = 'white'; // Default to full shininess if texture fails
+        context.fillRect(0, 0, 1, 1);
+        shininessTexture = new THREE.CanvasTexture(canvas);
+
+      }
+    }
+
+
+    async function loadShadersAndTextures() // << MODIFIED FUNCTION NAME
+    {
+      try
+      {
+        await loadTextures(); // << CALL TEXTURE LOADING
+        [mainVertexShader, mainFragmentShader] = await Promise.all([
+          fetchShader('main.vert.glsl'),
+          fetchShader('main.frag.glsl')
+        ]);
+        initScene();
+        animateScene();
+      } catch (error)
+      {
+        console.error("Error loading shaders or textures:", error); // << MODIFIED ERROR
+        document.getElementById('info').innerHTML = `Error loading shaders/textures: ${error.message}. Please check console.`;
+        throw error;
+      }
+    }
+
+    function initScene()
+    {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document.body.appendChild(renderer.domElement);
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
+
+      camera = new THREE.PerspectiveCamera(guiParams.cameraFov || 60, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(guiParams.cameraPosition?.x || 0, guiParams.cameraPosition?.y || 0.75, guiParams.cameraPosition?.z || 3.0);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.minDistance = guiParams.cameraMinDistance || 1.0;
+      controls.maxDistance = guiParams.cameraMaxDistance || 15.0;
+      controls.autoRotate = guiParams.autoRotate !== undefined ? guiParams.autoRotate : true;
+      controls.autoRotateSpeed = guiParams.autoRotateSpeed !== undefined ? guiParams.autoRotateSpeed : 0.2;
+
+
+      if (!animationStartTime) animationStartTime = performance.now();
+
+      const sphereGeometry = new THREE.SphereGeometry(1, 96, 96);
+      // IMPORTANT: Ensure your geometry has UVs. SphereGeometry has them by default.
+      // If using a custom geometry, make sure it has UV attributes.
+      sphereGeometry.computeTangents();
+
+      const lightsUniformValue = [];
+      const numActiveLightsForShader = Math.min(
+        guiParams.numLights,
+        guiParams.lights.length,
+        MAX_LIGHTS_IN_SHADER
+      );
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        const lightData = guiParams.lights[i];
+        lightsUniformValue.push({
+          enabled: (i < numActiveLightsForShader) ? (lightData.enabled !== undefined ? lightData.enabled : false) : false,
+          color: new THREE.Color().setRGB(lightData.color?.r ?? 0, lightData.color?.g ?? 0, lightData.color?.b ?? 0),
+          intensity: lightData.intensity !== undefined ? lightData.intensity : 0,
+          diffuseContribution: lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0,
+          specularContribution: lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0,
+          specularShininess: lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0,
+          position: new THREE.Vector3(lightData.position?.x ?? 0, lightData.position?.y ?? 0, lightData.position?.z ?? 5.0),
+          diffuseHfNormalAmount: lightData.diffuseHfNormalAmount !== undefined ? lightData.diffuseHfNormalAmount : 1.0,
+          specularHfNormalAmount: lightData.specularHfNormalAmount !== undefined ? lightData.specularHfNormalAmount : 1.0
+        });
+      }
+
+      const mainUniforms = {
+        uTime: { value: 0.0 },
+        uVertexDisplacementScale: { value: guiParams.vertexDisplacementScale },
+        uLfMasterScale: { value: guiParams.lfMasterScale },
+        uLfPatternTimeScale: { value: guiParams.lfPatternTimeScale },
+        uLfOctaves: { value: Math.floor(guiParams.lfOctaves) },
+        uLfLacunarity: { value: guiParams.lfLacunarity },
+        uLfPersistence: { value: guiParams.lfPersistence },
+        uLfNoiseContrastLower: { value: guiParams.lfNoiseContrastLower },
+        uLfNoiseContrastUpper: { value: guiParams.lfNoiseContrastUpper },
+        uLfNormalStrength: { value: guiParams.lfNormalStrength },
+        uLfFlowScale: { value: guiParams.lfFlowScale },
+        uLfFlowStrength: { value: guiParams.lfFlowStrength },
+        uLfFlowTimeScale: { value: guiParams.lfFlowTimeScale },
+        uEnablePeriodicLf: { value: guiParams.lfEnablePeriodic },
+        uPeriodicLengthLf: { value: new THREE.Vector3(guiParams.lfPeriodicLengthX, guiParams.lfPeriodicLengthY, guiParams.lfPeriodicLengthZ) },
+        uHfEnable: { value: guiParams.hfEnable },
+        uHfMasterScale: { value: guiParams.hfMasterScale },
+        uHfPatternTimeScale: { value: guiParams.hfPatternTimeScale },
+        uHfOctaves: { value: Math.floor(guiParams.hfOctaves) },
+        uHfLacunarity: { value: guiParams.hfLacunarity },
+        uHfPersistence: { value: guiParams.hfPersistence },
+        uHfNormalStrength: { value: guiParams.hfNormalStrength },
+        uHfFlowScale: { value: guiParams.hfFlowScale },
+        uHfFlowStrength: { value: guiParams.hfFlowStrength },
+        uHfFlowTimeScale: { value: guiParams.hfFlowTimeScale },
+        uColor1: { value: new THREE.Color().setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b) },
+        uColor2: { value: new THREE.Color().setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b) },
+        uColor3: { value: new THREE.Color().setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b) },
+        uTroughColorMultiplier: { value: new THREE.Vector3(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b) },
+        uTroughMin: { value: guiParams.troughMin },
+        uTroughMax: { value: guiParams.troughMax },
+        uTroughGamma: { value: guiParams.troughGamma },
+        uColorNoiseScale: { value: guiParams.colorNoiseScale },
+        uColorNoiseTimeScale: { value: guiParams.colorNoiseTimeScale },
+        uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
+        uLights: { value: lightsUniformValue },
+        uNumLights: { value: numActiveLightsForShader },
+        uShininessMap: { value: shininessTexture } // << ADD TEXTURE TO UNIFORMS
+      };
+
+      const mainMaterial = new THREE.ShaderMaterial({
+        vertexShader: mainVertexShader,
+        fragmentShader: mainFragmentShader,
+        uniforms: mainUniforms,
+      });
+
+      sphere = new THREE.Mesh(sphereGeometry, mainMaterial);
+      scene.add(sphere);
+
+      setupGUI();
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function setupGUI()
+    {
+      gui = new GUI();
+      gui.title("Shader Controls");
+
+      const saveButton = { save: saveSettings };
+      gui.add(saveButton, 'save').name('Save Settings');
+      const resetButton = { reset: () => { localStorage.removeItem(SETTINGS_KEY); window.location.reload(); } };
+      gui.add(resetButton, 'reset').name('Reset to Defaults');
+
+      gui.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
+      gui.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
+
+      const lfFolder = gui.addFolder('LF Noise (Displacement)');
+      const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
+      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.01).name('Master Scale').onChange(v => { sphere.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.001).name('Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfOctaves', 1, 8, 1).name('Octaves').onChange(v => { sphere.material.uniforms.uLfOctaves.value = Math.floor(v); saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.01).name('Lacunarity').onChange(v => { sphere.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.01).name('Persistence').onChange(v => { sphere.material.uniforms.uLfPersistence.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.01).name('Contrast Min').onChange(v => { sphere.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.01).name('Contrast Max').onChange(v => { sphere.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.001).name('LF Normal Strength').onChange(v => { sphere.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
+
+      const lfFlowFolder = lfFolder.addFolder('Flow Field (Advection)');
+      lfFlowFolder.add(guiParams, 'lfFlowScale', 0.001, 1.0, 0.01).name('Flow Detail Scale').onChange(v => { sphere.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { sphere.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { sphere.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
+
+      const colorFolder = gui.addFolder('Surface Colors');
+      colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { sphere.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { sphere.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color3').name('Color 3 (Base/Trough)').onChange(v => { sphere.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'troughColorMultiplier').name('Trough Multiplier').onChange(v => { sphere.material.uniforms.uTroughColorMultiplier.value.set(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b); saveSettings(); });
+      colorFolder.add(guiParams, 'troughMin', 0.0, 1.0, 0.001).name('Trough Min').onChange(v => { sphere.material.uniforms.uTroughMin.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughMax', 0.0, 1.0, 0.001).name('Trough Max').onChange(v => { sphere.material.uniforms.uTroughMax.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.01).name('Trough Gamma').onChange(v => { sphere.material.uniforms.uTroughGamma.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.001).name('Color Noise Scale').onChange(v => { sphere.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 0.5, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
+
+      const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
+      hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { sphere.material.uniforms.uHfEnable.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.001).name('HF Master Scale').onChange(v => { sphere.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.001).name('HF Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfOctaves', 1, 8, 1).name('HF Octaves').onChange(v => { sphere.material.uniforms.uHfOctaves.value = Math.floor(v); saveSettings(); });
+      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.01).name('HF Lacunarity').onChange(v => { sphere.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.01).name('HF Persistence').onChange(v => { sphere.material.uniforms.uHfPersistence.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.001).name('HF Normal Strength').onChange(v => { sphere.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
+
+      const hfFlowFolder = hfFolder.addFolder('HF Flow Field');
+      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { sphere.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 10.0, 0.01).name('HF Flow Strength').onChange(v => { sphere.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { sphere.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
+
+      const lightingFolder = gui.addFolder('Lighting System');
+      lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.01).name('Ambient Intensity')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uAmbientIntensity.value = v; saveSettings(); });
+
+      lightingFolder.add(guiParams, 'numLights', 0, MAX_LIGHTS_IN_SHADER, 1).name('Active Lights Count')
+        .onChange(v =>
+        {
+          if (sphere)
+          {
+            const newNumActive = Math.min(v, MAX_LIGHTS_IN_SHADER);
+            sphere.material.uniforms.uNumLights.value = newNumActive;
+            for (let k = 0; k < MAX_LIGHTS_IN_SHADER; k++)
+            {
+              if (k < newNumActive)
+              {
+                sphere.material.uniforms.uLights.value[k].enabled = guiParams.lights[k].enabled;
+              } else
+              {
+                sphere.material.uniforms.uLights.value[k].enabled = false;
+              }
+            }
+          }
+          saveSettings();
+        });
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        const lightGuiParams = guiParams.lights[i];
+        const lightUniformRef = sphere.material.uniforms.uLights.value[i];
+        const lightFolder = lightingFolder.addFolder(lightGuiParams.name || `Light ${i + 1}`);
+        lightFolder.add(lightGuiParams, 'enabled').name('Enabled (if active)')
+          .onChange(v =>
+          {
+            lightGuiParams.enabled = v;
+            if (i < sphere.material.uniforms.uNumLights.value)
+            {
+              lightUniformRef.enabled = v;
+            }
+            saveSettings();
+          });
+        lightFolder.addColor(lightGuiParams, 'color').name('Color')
+          .onChange(() =>
+          {
+            lightUniformRef.color.setRGB(lightGuiParams.color.r, lightGuiParams.color.g, lightGuiParams.color.b);
+            saveSettings();
+          });
+        lightFolder.add(lightGuiParams, 'intensity', 0.0, 30.0, 0.01).name('Intensity')
+          .onChange(v => { lightUniformRef.intensity = v; saveSettings(); });
+
+        const contributionsFolder = lightFolder.addFolder('Contributions & Shininess');
+        contributionsFolder.add(lightGuiParams, 'diffuseContribution', 0.0, 1.0, 0.01).name('Diffuse')
+          .onChange(v => { lightUniformRef.diffuseContribution = v; saveSettings(); });
+        contributionsFolder.add(lightGuiParams, 'specularContribution', 0.0, 1.0, 0.01).name('Specular')
+          .onChange(v => { lightUniformRef.specularContribution = v; saveSettings(); });
+        contributionsFolder.add(lightGuiParams, 'specularShininess', 1.0, 512.0, 1.0).name('Shininess (Base)') // << UPDATED NAME
+          .onChange(v => { lightUniformRef.specularShininess = v; saveSettings(); });
+
+        const positionFolder = lightFolder.addFolder('Position (View Space)');
+        positionFolder.add(lightGuiParams.position, 'x', -30, 30, 0.1).name('X')
+          .onChange(v => { lightUniformRef.position.x = v; saveSettings(); });
+        positionFolder.add(lightGuiParams.position, 'y', -30, 30, 0.1).name('Y')
+          .onChange(v => { lightUniformRef.position.y = v; saveSettings(); });
+        positionFolder.add(lightGuiParams.position, 'z', -30, 30, 0.1).name('Z')
+          .onChange(v => { lightUniformRef.position.z = v; saveSettings(); });
+
+        const hfNormalsFolder = lightFolder.addFolder('HF Normal Influence');
+        hfNormalsFolder.add(lightGuiParams, 'diffuseHfNormalAmount', 0.0, 1.0, 0.01).name('Diffuse HF Amt')
+          .onChange(v => { lightUniformRef.diffuseHfNormalAmount = v; saveSettings(); });
+        hfNormalsFolder.add(lightGuiParams, 'specularHfNormalAmount', 0.0, 1.0, 0.01).name('Specular HF Amt')
+          .onChange(v => { lightUniformRef.specularHfNormalAmount = v; saveSettings(); });
+
+        if (i >= guiParams.numLights)
+        {
+          lightFolder.close();
+        } else if (i > 0)
+        {
+          lightFolder.close();
+        }
+      }
+      lightingFolder.open();
+
+
+      const sceneFolder = gui.addFolder('Scene & Camera');
+      sceneFolder.add(guiParams, 'autoRotate').name('Auto Rotate').onChange(v => { controls.autoRotate = v; saveSettings(); });
+      sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.01).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
+      sceneFolder.open();
+
+      gui.controllersRecursive().forEach(controller =>
+      {
+        if (controller.updateDisplay) controller.updateDisplay();
+      });
+    }
+
+    function onWindowResize()
+    {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animateScene()
+    {
+      requestAnimationFrame(animateScene);
+      const currentTime = performance.now();
+
+      if (!animationStartTime && currentTime > 0)
+      {
+        animationStartTime = currentTime;
+      }
+      const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
+
+      if (sphere && sphere.material && sphere.material.uniforms.uTime)
+      {
+        sphere.material.uniforms.uTime.value = elapsedTimeSeconds * (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    async function main()
+    {
+      try
+      {
+        await fetchExternalDefaultSettings();
+        loadSettings();
+        await loadShadersAndTextures(); // << MODIFIED FUNCTION CALL
+      } catch (error)
+      {
+        console.error("Failed to initialize the application:", error);
+        const infoElement = document.getElementById('info');
+        if (infoElement)
+        {
+          infoElement.innerHTML = `Critical error during application initialization: ${error.message}. Please check the console.`;
+        }
+      }
+    }
+
+    main();
+
+  </script>
+</body>
+
+</html>
