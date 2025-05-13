@@ -98,29 +98,6 @@
       {
         console.error("CRITICAL ERROR fetching default-settings.json. Application might not work as expected.", e);
         document.getElementById('info').innerHTML = `Error loading default settings from JSON: ${e.message}. Please check console. App may be unstable. Using minimal fallbacks.`;
-        fetchedDefaultSettings = {
-          vertexDisplacementScale: 0.1, animationSpeed: 1.0, autoRotate: true, autoRotateSpeed: 0.2,
-          sceneBackgroundColor: 0x202025, cameraFov: 60, cameraPosition: { x: 0, y: 0.75, z: 3.0 },
-          cameraMinDistance: 1.0, cameraMaxDistance: 15.0,
-          lfMasterScale: 0.1, lfPatternTimeScale: 0.03, lfOctaves: 3, lfLacunarity: 2.0, lfPersistence: 0.5,
-          lfNoiseContrastLower: 0.0, lfNoiseContrastUpper: 1.0, lfNormalStrength: 0.15,
-          lfFlowScale: 0.5, lfFlowStrength: 1.0, lfFlowTimeScale: 0.05,
-          lfEnablePeriodic: false, lfPeriodicLengthX: 10, lfPeriodicLengthY: 10, lfPeriodicLengthZ: 10,
-          hfEnable: true, hfMasterScale: 5.0, hfPatternTimeScale: 0.1, hfOctaves: 3, hfLacunarity: 2.0, hfPersistence: 0.5,
-          hfNormalStrength: 0.05, hfFlowScale: 3.0, hfFlowStrength: 0.5, hfFlowTimeScale: 0.08,
-          color1: { r: 0.8, g: 0.2, b: 0.1 }, color2: { r: 0.1, g: 0.7, b: 0.3 }, color3: { r: 0.2, g: 0.3, b: 0.9 },
-          troughColorMultiplier: { r: 0.5, g: 0.5, b: 0.5 },
-          troughMin: 0.0, troughMax: 0.5, troughGamma: 1.0,
-          colorNoiseScale: 0.5, colorNoiseTimeScale: 0.05,
-          ambientIntensity: 0.1, numLights: 1,
-          lights: [
-            {
-              name: "Default Light 1", enabled: true, color: { r: 1.0, g: 1.0, b: 1.0 }, intensity: 1.0,
-              diffuseContribution: 1.0, specularContribution: 0.5, specularShininess: 32.0,
-              position: { x: 5.0, y: 5.0, z: 5.0 }, diffuseHfNormalAmount: 1.0, specularHfNormalAmount: 1.0
-            }
-          ]
-        };
       }
     }
 
@@ -137,7 +114,8 @@
         console.log("Default presets loaded from default-presets.json:", defaultPresets);
 
         // Ensure the 'idle' preset exists
-        if(!defaultPresets.idle) {
+        if (!defaultPresets.idle)
+        {
           console.warn("Idle preset not found in default presets, might cause errors if referenced");
         }
       }
@@ -726,12 +704,14 @@
         const presetOptions = { 'Default': 'Default' };
 
         // Add default presets
-        Object.keys(defaultPresets).forEach(key => {
+        Object.keys(defaultPresets).forEach(key =>
+        {
           presetOptions[key] = key;
         });
 
         // Add user presets (will override defaults if same name)
-        Object.keys(userPresets).forEach(key => {
+        Object.keys(userPresets).forEach(key =>
+        {
           presetOptions[key] = key;
         });
 
@@ -754,6 +734,14 @@
             window.location.reload();
           }
         });
+        
+      // Function to refresh the preset controller (for use after saving/deleting presets)
+      const refreshPresetController = () => {
+        // The lil-gui library uses different property names in different versions
+        // Try both __controllers (newer versions) and controllers (older versions)
+        const controllers = presetFolder.__controllers || presetFolder.controllers;
+        window.location.reload();
+      };
 
       // Input field for new preset name
       presetFolder.add(presetState, 'newPresetName')
@@ -772,81 +760,50 @@
               currentPresetController.updateDisplay();
 
               // Refresh preset dropdown
-              gui.remove(presetFolder.children.find(c => c.property === 'preset'));
-              presetFolder.add({ preset: presetState.newPresetName }, 'preset', getPresetList())
-                .name('Load Preset')
-                .onChange(presetName =>
-                {
-                  if (presetName && presetName !== 'Default')
-                  {
-                    applyPreset(presetName);
-                    presetState.currentPreset = presetName;
-                    currentPresetController.updateDisplay();
-                  } else if (presetName === 'Default')
-                  {
-                    localStorage.removeItem(SETTINGS_KEY);
-                    window.location.reload();
-                  }
-                });
+              refreshPresetController();
+              
+              alert(`Preset "${presetState.newPresetName}" has been saved.`);
             }
+          }
+          else {
+            alert("Please enter a name for the preset.");
           }
         }
       }, 'savePreset')
-        .name('Save Current As Preset');
-
-      // Delete preset confirmation checkbox
-      presetFolder.add(presetState, 'deleteConfirm')
-        .name('Confirm Delete');
+        .name('Save Current Preset');
 
       // Delete button
       presetFolder.add({
         deletePreset: () =>
         {
-          if (presetState.deleteConfirm &&
-            presetState.currentPreset !== 'Default' &&
+          if (presetState.currentPreset !== 'Default' &&
             userPresets[presetState.currentPreset])
           {
-
-            const nameToDelete = presetState.currentPreset;
-            if (deletePreset(nameToDelete))
+            // Confirm with the user
+            if (confirm(`Are you sure you want to delete the preset "${presetState.currentPreset}"?`))
             {
-              // Reset current preset display
-              presetState.currentPreset = 'Default';
-              currentPresetController.updateDisplay();
+              const nameToDelete = presetState.currentPreset;
+              if (deletePreset(nameToDelete))
+              {
+                // Reset current preset display
+                presetState.currentPreset = 'Default';
+                currentPresetController.updateDisplay();
 
-              // Reset delete confirmation
-              presetState.deleteConfirm = false;
-
-              // Refresh preset dropdown
-              gui.remove(presetFolder.children.find(c => c.property === 'preset'));
-              presetFolder.add({ preset: 'Default' }, 'preset', getPresetList())
-                .name('Load Preset')
-                .onChange(presetName =>
-                {
-                  if (presetName && presetName !== 'Default')
-                  {
-                    applyPreset(presetName);
-                    presetState.currentPreset = presetName;
-                    currentPresetController.updateDisplay();
-                  } else if (presetName === 'Default')
-                  {
-                    localStorage.removeItem(SETTINGS_KEY);
-                    window.location.reload();
-                  }
-                });
+                // Refresh the preset dropdown
+                refreshPresetController();
+                
+                alert(`Preset "${nameToDelete}" has been deleted.`);
+              }
             }
+          }
+          else {
+            alert("Cannot delete the Default preset or no user preset is currently selected.");
           }
         }
       }, 'deletePreset')
         .name('Delete Current Preset');
 
       presetFolder.open();
-
-      // Regular settings controls
-      const saveButton = { save: saveSettings };
-      gui.add(saveButton, 'save').name('Save Settings');
-      const resetButton = { reset: () => { localStorage.removeItem(SETTINGS_KEY); window.location.reload(); } };
-      gui.add(resetButton, 'reset').name('Reset to Defaults');
 
       gui.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
@@ -1062,11 +1019,14 @@
     }
 
     // Function to directly apply the idle preset (helpful for debugging)
-    function forceApplyIdlePreset() {
-      if(defaultPresets && defaultPresets.idle) {
+    function forceApplyIdlePreset()
+    {
+      if (defaultPresets && defaultPresets.idle)
+      {
         console.log("Forcing application of idle preset:");
         applyPreset("idle");
-      } else {
+      } else
+      {
         console.error("Cannot force apply idle preset - not found in default presets");
       }
     }
@@ -1080,7 +1040,7 @@
         loadUserPresets();
         loadSettings();
         await loadShadersAndTextures(); // << MODIFIED FUNCTION CALL
-        forceApplyIdlePreset();
+        setTimeout(forceApplyIdlePreset, 1000); // Force apply idle preset after 1 second
       } catch (error)
       {
         console.error("Failed to initialize the application:", error);
