@@ -1,0 +1,13 @@
+{
+  "default": "default-presets.json",
+  "available": [
+    {
+      "name": "Default",
+      "file": "default-presets.json"
+    },
+    {
+      "name": "idle",
+      "file": "default-presets.json"
+    }
+  ]
+}
