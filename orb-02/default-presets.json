@@ -1,5 +1,6 @@
 {
   "idle": {
+    "transitionTime": 1.0,
     "vertexDisplacementScale": 0.203,
     "lfMasterScale": 1,
     "lfPatternTimeScale": 0.051,
@@ -162,6 +163,7 @@
     ]
   },
   "listening": {
+    "transitionTime": 0.5,
     "animationSpeed": 0.8,
     "lfMasterScale": 0.15,
     "lfPatternTimeScale": 0.05,
@@ -173,6 +175,7 @@
     "hfFlowTimeScale": 0.1
   },
   "speaking": {
+    "transitionTime": 0.3,
     "animationSpeed": 1.0,
     "lfMasterScale": 0.25,
     "lfPatternTimeScale": 0.07,
@@ -184,6 +187,7 @@
     "hfFlowTimeScale": 0.15
   },
   "thinking": {
+    "transitionTime": 0.8,
     "animationSpeed": 0.5,
     "lfMasterScale": 0.2,
     "lfPatternTimeScale": 0.03,

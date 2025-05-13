@@ -77,6 +77,21 @@
 
     let fetchedDefaultSettings = {};
     let guiParams = {};
+    
+    // Global preset state for UI and transitions
+    let presetState = {
+      currentPreset: currentPresetName,
+      newPresetName: 'MyPreset',
+      deleteConfirm: false,
+      transitionTime: 1.0 // Default transition time in seconds
+    };
+    
+    // Variables for transition blending
+    let isTransitioning = false;
+    let transitionStartTime = 0;
+    let transitionDuration = 0;
+    let startSettings = null;
+    let targetSettings = null;
 
     const MAX_LIGHTS_IN_SHADER = 4;
 
@@ -172,6 +187,9 @@
 
       // Create a deep copy of the current settings
       const presetSettings = JSON.parse(JSON.stringify(guiParams));
+      
+      // Add the transition time from the GUI
+      presetSettings.transitionTime = presetState.transitionTime;
 
       // Store in user presets
       userPresets[presetName] = presetSettings;
@@ -190,8 +208,7 @@
     {
       let presetSettings;
       console.log("Applying preset:", presetName);
-      console.log("Current user presets:", userPresets);
-      console.log("Current default presets:", defaultPresets);
+      
       // Check user presets first
       if (userPresets[presetName])
       {
@@ -210,13 +227,47 @@
         console.error(`Preset not found: ${presetName}`);
         return false;
       }
-
-      // Create a copy of current settings
+      
+      // Create a deep copy of current settings
       const currentSettings = JSON.parse(JSON.stringify(guiParams));
-
+      
+      // Get transition time from preset or use default
+      let transitionTime = presetSettings.transitionTime;
+      if (transitionTime === undefined || transitionTime === null) {
+        // If not specified in preset, use the value from GUI
+        transitionTime = presetState.transitionTime;
+      }
+      
+      // If transition time is 0 or we don't have any shaders loaded yet, 
+      // apply immediately without transition
+      if (transitionTime <= 0 || !sphere || !sphere.material || !sphere.material.uniforms) {
+        // Apply preset immediately without transition
+        applyPresetSettingsImmediately(presetSettings);
+        return true;
+      }
+      
+      // Set up the transition
+      isTransitioning = true;
+      transitionStartTime = performance.now() * 0.001; // Convert to seconds
+      transitionDuration = transitionTime;
+      startSettings = currentSettings;
+      targetSettings = JSON.parse(JSON.stringify(presetSettings));
+      
+      // Update current preset name
+      currentPresetName = presetName;
+      
+      console.log(`Starting transition to preset: ${presetName} over ${transitionTime} seconds`);
+      return true;
+    }
+    
+    // Helper function for immediate preset application without blending
+    function applyPresetSettingsImmediately(presetSettings) {
       // Apply preset, but preserve any properties not included in the preset
       for (const key in presetSettings)
       {
+        // Skip the transitionTime property as it's a meta property
+        if (key === 'transitionTime') continue;
+        
         // Handle nested objects (e.g., colors, camera position)
         if (typeof presetSettings[key] === 'object' && !Array.isArray(presetSettings[key]))
         {
@@ -234,9 +285,6 @@
           guiParams[key] = presetSettings[key];
         }
       }
-
-      // Update current preset name
-      currentPresetName = presetName;
 
       // Update all material uniforms
       if (sphere && sphere.material && sphere.material.uniforms)
@@ -256,8 +304,7 @@
       // Save settings to localStorage
       saveSettings();
 
-      console.log(`Applied preset: ${presetName}`);
-      return true;
+      console.log(`Applied preset immediately`);
     }
 
     function deletePreset(presetName)
@@ -514,6 +561,53 @@
         console.error("Error saving settings to localStorage.", e);
       }
     }
+    
+    /**
+     * Helper function to blend between values based on a progress ratio
+     * @param {*} start Starting value (number, object, or array)
+     * @param {*} end Target value (number, object, or array)
+     * @param {number} progress Transition progress (0.0 to 1.0)
+     * @returns Interpolated value
+     */
+    function blendValues(start, end, progress) {
+      // If either is null or undefined, return the other one
+      if (start === null || start === undefined) return end;
+      if (end === null || end === undefined) return start;
+      
+      // Handle arrays (like for light data)
+      if (Array.isArray(start) && Array.isArray(end)) {
+        return start.map((item, index) => {
+          return blendValues(item, end[index < end.length ? index : end.length - 1], progress);
+        });
+      }
+      
+      // Handle objects (like for colors or positions)
+      if (typeof start === 'object' && typeof end === 'object') {
+        const result = {};
+        // Combine all keys from both objects
+        const allKeys = [...new Set([...Object.keys(start), ...Object.keys(end)])];
+        
+        for (const key of allKeys) {
+          if (key in start && key in end) {
+            result[key] = blendValues(start[key], end[key], progress);
+          } else if (key in start) {
+            result[key] = start[key];
+          } else {
+            result[key] = end[key];
+          }
+        }
+        return result;
+      }
+      
+      // Handling primitive values like numbers
+      if (typeof start === 'number' && typeof end === 'number') {
+        return start + (end - start) * progress;
+      }
+      
+      // For values that can't be interpolated (like strings, booleans), 
+      // switch at the halfway point
+      return progress < 0.5 ? start : end;
+    }
 
     async function fetchShader(url)
     {
@@ -685,12 +779,8 @@
       // Create preset management folder
       const presetFolder = gui.addFolder('Presets');
 
-      // Add current preset display
-      const presetState = {
-        currentPreset: currentPresetName,
-        newPresetName: 'MyPreset',
-        deleteConfirm: false
-      };
+      // Use the globally defined presetState
+      presetState.currentPreset = currentPresetName;
 
       // Display current preset
       const currentPresetController = presetFolder.add(presetState, 'currentPreset')
@@ -720,12 +810,20 @@
       };
 
       // Preset selection dropdown
-      presetFolder.add({ preset: 'Default' }, 'preset', getPresetList())
+      const presetController = presetFolder.add({ preset: 'Default' }, 'preset', getPresetList())
         .name('Load Preset')
         .onChange(presetName =>
         {
           if (presetName && presetName !== 'Default')
           {
+            if (isTransitioning) {
+              console.log("Can't change presets during an active transition!");
+              alert("Please wait for the current transition to complete");
+              // Reset the dropdown to current preset
+              presetController.setValue(currentPresetName);
+              return;
+            }
+            
             applyPreset(presetName);
             presetState.currentPreset = presetName;
             currentPresetController.updateDisplay();
@@ -746,6 +844,14 @@
       // Input field for new preset name
       presetFolder.add(presetState, 'newPresetName')
         .name('New Preset Name');
+        
+      // Add transition time slider
+      presetFolder.add(presetState, 'transitionTime', 0.0, 5.0, 0.1)
+        .name('Transition Time (s)')
+        .onChange(value => {
+          // When changed, this value will be used for the next preset transition
+          console.log(`Transition time set to ${value} seconds`);
+        });
 
       // Save button
       presetFolder.add({
@@ -1009,13 +1115,77 @@
         animationStartTime = currentTime;
       }
       const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
+      
+      // Handle transitions if active
+      if (isTransitioning && startSettings && targetSettings) {
+        const transitionElapsedTime = elapsedTimeSeconds - transitionStartTime;
+        const progress = Math.min(transitionElapsedTime / transitionDuration, 1.0);
+        
+        // Blend the parameters based on progress
+        if (progress < 1.0) {
+          // Still transitioning - blend values
+          blendCurrentSettings(progress);
+        } else {
+          // Transition complete
+          console.log("Transition complete!");
+          isTransitioning = false;
+          
+          // Apply final settings directly
+          applyPresetSettingsImmediately(targetSettings);
+          
+          // Clean up
+          startSettings = null;
+          targetSettings = null;
+        }
+      }
 
+      // Update the shader time uniform
       if (sphere && sphere.material && sphere.material.uniforms.uTime)
       {
         sphere.material.uniforms.uTime.value = elapsedTimeSeconds * (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
       }
+      
       controls.update();
       renderer.render(scene, camera);
+    }
+    
+    /**
+     * Blend between start and target settings based on progress
+     * @param {number} progress Transition progress (0.0 to 1.0)
+     */
+    function blendCurrentSettings(progress) {
+      // Skip transitionTime in the blending process
+      for (const key in targetSettings) {
+        // Skip the transitionTime property as it's a meta property
+        if (key === 'transitionTime') continue;
+        
+        // Only blend properties that exist in both
+        if (key in startSettings) {
+          // Handle objects, arrays, and primitives
+          if (typeof targetSettings[key] === 'object' && targetSettings[key] !== null) {
+            // For objects (including arrays)
+            if (typeof startSettings[key] === 'object' && startSettings[key] !== null) {
+              // Blend the nested objects/arrays
+              guiParams[key] = blendValues(startSettings[key], targetSettings[key], progress);
+            } else {
+              // Start is a primitive but target is an object - partial blend not possible
+              // For safety, keep as is until end of transition
+              if (progress >= 0.5) {
+                guiParams[key] = JSON.parse(JSON.stringify(targetSettings[key]));
+              }
+            }
+          } else {
+            // For primitives
+            guiParams[key] = blendValues(startSettings[key], targetSettings[key], progress);
+          }
+        }
+      }
+      
+      // Update material and GUI
+      updateAllMaterialUniforms();
+      
+      // Note: We don't update GUI controllers during transition for performance
+      // They will be updated at the end of the transition
     }
 
     // Function to directly apply the idle preset (helpful for debugging)
