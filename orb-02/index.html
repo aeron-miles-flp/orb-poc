@@ -246,12 +246,39 @@
         return true;
       }
       
+      // Prepare settings for a smooth transition
+      const preparedStartSettings = JSON.parse(JSON.stringify(currentSettings)); // Deep clone
+      const preparedTargetSettings = JSON.parse(JSON.stringify(presetSettings)); // Deep clone
+      
+      // Special handling for animation parameters to prevent extreme values during transitions
+      // This ensures we have consistent animation throughout the transition
+      
+      // If either start or target has zero animation, smoothly transition to avoid snapping
+      if (preparedStartSettings.vertexAnimationAmount === 0 && 
+          preparedTargetSettings.vertexAnimationAmount !== 0) {
+        // Going from static to animated - use a small non-zero value to start
+        preparedStartSettings.vertexAnimationAmount = preparedTargetSettings.vertexAnimationAmount * 0.01;
+      } else if (preparedStartSettings.vertexAnimationAmount !== 0 && 
+                 preparedTargetSettings.vertexAnimationAmount === 0) {
+        // Going from animated to static - use a small non-zero value to end
+        preparedTargetSettings.vertexAnimationAmount = preparedStartSettings.vertexAnimationAmount * 0.01;
+      }
+      
+      // Similar approach for animation speed
+      if (preparedStartSettings.vertexAnimationSpeed === 0 && 
+          preparedTargetSettings.vertexAnimationSpeed !== 0) {
+        preparedStartSettings.vertexAnimationSpeed = preparedTargetSettings.vertexAnimationSpeed * 0.01;
+      } else if (preparedStartSettings.vertexAnimationSpeed !== 0 && 
+                 preparedTargetSettings.vertexAnimationSpeed === 0) {
+        preparedTargetSettings.vertexAnimationSpeed = preparedStartSettings.vertexAnimationSpeed * 0.01;
+      }
+      
       // Set up the transition
       isTransitioning = true;
       transitionStartTime = performance.now() * 0.001; // Convert to seconds
       transitionDuration = transitionTime;
-      startSettings = currentSettings;
-      targetSettings = JSON.parse(JSON.stringify(presetSettings));
+      startSettings = preparedStartSettings;
+      targetSettings = preparedTargetSettings;
       
       // Update current preset name
       currentPresetName = presetName;
@@ -277,7 +304,40 @@
         // Handle arrays (e.g., lights)
         else if (Array.isArray(presetSettings[key]))
         {
-          guiParams[key] = JSON.parse(JSON.stringify(presetSettings[key]));
+          if (key === 'lights') {
+            // Special handling for lights array with nested objects
+            if (!Array.isArray(guiParams[key])) {
+              guiParams[key] = [];
+            }
+            
+            // Ensure we don't exceed the maximum lights
+            const numLights = Math.min(presetSettings[key].length, MAX_LIGHTS_IN_SHADER);
+            
+            // Process each light in the preset
+            for (let i = 0; i < numLights; i++) {
+              if (!guiParams[key][i]) {
+                guiParams[key][i] = {};
+              }
+              
+              // Copy all properties from preset light to guiParams light
+              for (const lightProp in presetSettings[key][i]) {
+                if (typeof presetSettings[key][i][lightProp] === 'object' && 
+                    !Array.isArray(presetSettings[key][i][lightProp])) {
+                  // Handle nested objects inside each light (like position, color)
+                  if (!guiParams[key][i][lightProp]) {
+                    guiParams[key][i][lightProp] = {};
+                  }
+                  Object.assign(guiParams[key][i][lightProp], presetSettings[key][i][lightProp]);
+                } else {
+                  // Handle primitive values
+                  guiParams[key][i][lightProp] = presetSettings[key][i][lightProp];
+                }
+              }
+            }
+          } else {
+            // For other arrays, deep copy
+            guiParams[key] = JSON.parse(JSON.stringify(presetSettings[key]));
+          }
         }
         // Handle primitive values
         else
@@ -338,10 +398,19 @@
 
       const uniforms = sphere.material.uniforms;
 
-      // Update primitive uniforms
-      uniforms.uVertexDisplacementScale.value = guiParams.vertexDisplacementScale;
-      uniforms.uVertexAnimationAmount.value = guiParams.vertexAnimationAmount;
-      uniforms.uVertexAnimationSpeed.value = guiParams.vertexAnimationSpeed;
+      // Update primitive uniforms with safety checks for animation parameters
+      // For animation parameters, ensure they are valid numbers to prevent NaN issues
+      uniforms.uVertexDisplacementScale.value = typeof guiParams.vertexDisplacementScale === 'number' ? 
+          guiParams.vertexDisplacementScale : 0;
+      
+      // Animation parameters need special care as they interact with time
+      uniforms.uVertexAnimationAmount.value = typeof guiParams.vertexAnimationAmount === 'number' ? 
+          guiParams.vertexAnimationAmount : 0;
+      
+      uniforms.uVertexAnimationSpeed.value = typeof guiParams.vertexAnimationSpeed === 'number' ? 
+          guiParams.vertexAnimationSpeed : 0;
+          
+      // Other noise parameters
       uniforms.uLfMasterScale.value = guiParams.lfMasterScale;
       uniforms.uLfPatternTimeScale.value = guiParams.lfPatternTimeScale;
       uniforms.uLfOctaves.value = Math.floor(guiParams.lfOctaves);
@@ -578,9 +647,35 @@
       
       // Handle arrays (like for light data)
       if (Array.isArray(start) && Array.isArray(end)) {
-        return start.map((item, index) => {
-          return blendValues(item, end[index < end.length ? index : end.length - 1], progress);
-        });
+        // Create a result array with the appropriate length
+        const maxLength = Math.max(start.length, end.length);
+        const result = new Array(maxLength);
+        
+        for (let i = 0; i < maxLength; i++) {
+          if (i < start.length && i < end.length) {
+            // Both arrays have this index, blend the values
+            result[i] = blendValues(start[i], end[i], progress);
+          } else if (i < start.length) {
+            // Only in start array - use start value (will fade out based on progress)
+            if (typeof start[i] === 'number') {
+              // Linear fade out for numbers
+              result[i] = start[i] * (1 - progress);
+            } else {
+              // For objects or other types, keep the start value
+              result[i] = start[i];
+            }
+          } else {
+            // Only in end array - use end value (will fade in based on progress)
+            if (typeof end[i] === 'number') {
+              // Linear fade in for numbers
+              result[i] = end[i] * progress;
+            } else {
+              // For objects or other types, keep the end value
+              result[i] = end[i];
+            }
+          }
+        }
+        return result;
       }
       
       // Handle objects (like for colors or positions)
@@ -590,12 +685,43 @@
         const allKeys = [...new Set([...Object.keys(start), ...Object.keys(end)])];
         
         for (const key of allKeys) {
+          // Special handling for animation parameters that need careful blending
+          if ((key === 'vertexAnimationAmount' || key === 'vertexAnimationSpeed') && 
+              typeof start[key] === 'number' && typeof end[key] === 'number') {
+            
+            // For vertexAnimationAmount and vertexAnimationSpeed, we need to ensure smooth transitions
+            // Direct linear interpolation without any snapping
+            result[key] = start[key] + (end[key] - start[key]) * progress;
+            continue;
+          }
+          
+          // Handle vertex displacement with careful blending
+          if (key === 'vertexDisplacementScale' && 
+              typeof start[key] === 'number' && typeof end[key] === 'number') {
+            
+            // Smoothly interpolate displacement scale
+            result[key] = start[key] + (end[key] - start[key]) * progress;
+            continue;
+          }
+          
+          // Normal blending for other properties
           if (key in start && key in end) {
+            // Both objects have this key, blend the values
             result[key] = blendValues(start[key], end[key], progress);
           } else if (key in start) {
-            result[key] = start[key];
+            // Only in start object - handle fade out for numbers
+            if (typeof start[key] === 'number') {
+              result[key] = start[key] * (1 - progress);
+            } else {
+              result[key] = start[key];
+            }
           } else {
-            result[key] = end[key];
+            // Only in end object - handle fade in for numbers
+            if (typeof end[key] === 'number') {
+              result[key] = end[key] * progress;
+            } else {
+              result[key] = end[key];
+            }
           }
         }
         return result;
@@ -603,6 +729,7 @@
       
       // Handling primitive values like numbers
       if (typeof start === 'number' && typeof end === 'number') {
+        // Ensure linear interpolation for numbers
         return start + (end - start) * progress;
       }
       
@@ -678,7 +805,7 @@
       scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
 
       camera = new THREE.PerspectiveCamera(guiParams.cameraFov || 60, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0.75, 3.0);
+      camera.position.set(0, 0.75, 5.0);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -911,7 +1038,7 @@
       // Add GUI controls for various parameters
       lfDispFolder.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
-      lfDispFolder.add(guiParams, 'vertexAnimationAmount', 0.0, 1.0, 0.001).name('Vertex Animation Amount')
+      lfDispFolder.add(guiParams, 'vertexAnimationAmount', -1.0, 1.0, 0.001).name('Vertex Animation Amount')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
@@ -1120,10 +1247,20 @@
       // Handle transitions if active
       if (isTransitioning && startSettings && targetSettings) {
         const transitionElapsedTime = elapsedTimeSeconds - transitionStartTime;
-        const progress = Math.min(transitionElapsedTime / transitionDuration, 1.0);
+        
+        // Ensure progress is clamped between 0 and 1, and follows a smooth curve
+        // Using smoothstep for a more natural transition
+        const rawProgress = Math.min(Math.max(transitionElapsedTime / transitionDuration, 0.0), 1.0);
+        // Smoothstep: 3x^2 - 2x^3 gives a nice ease-in, ease-out curve
+        const progress = rawProgress * rawProgress * (3.0 - 2.0 * rawProgress);
+        
+        // Log for debugging
+        if (Math.floor(rawProgress * 100) % 10 === 0) {
+          console.log(`Transition progress: ${rawProgress.toFixed(2)}`);
+        }
         
         // Blend the parameters based on progress
-        if (progress < 1.0) {
+        if (rawProgress < 1.0) {
           // Still transitioning - blend values
           blendCurrentSettings(progress);
         } else {
@@ -1143,7 +1280,12 @@
       // Update the shader time uniform
       if (sphere && sphere.material && sphere.material.uniforms.uTime)
       {
-        sphere.material.uniforms.uTime.value = elapsedTimeSeconds * (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
+        const timeValue = elapsedTimeSeconds * 
+          (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
+        
+        // Continue normal animation even during transitions
+        // This prevents the "snap then delay" effect by maintaining consistent animation
+        sphere.material.uniforms.uTime.value = timeValue;
       }
       
       controls.update();
@@ -1155,38 +1297,83 @@
      * @param {number} progress Transition progress (0.0 to 1.0)
      */
     function blendCurrentSettings(progress) {
-      // Skip transitionTime in the blending process
-      for (const key in targetSettings) {
-        // Skip the transitionTime property as it's a meta property
+      if (!startSettings || !targetSettings) {
+        console.error("Missing start or target settings for blending");
+        return;
+      }
+      
+      // Create a complete blended object using our improved blendValues function
+      const blendedSettings = blendValues(startSettings, targetSettings, progress);
+      
+      // Skip transitionTime in the settings update
+      delete blendedSettings.transitionTime;
+      
+      // Copy all blended values to guiParams
+      for (const key in blendedSettings) {
         if (key === 'transitionTime') continue;
         
-        // Only blend properties that exist in both
-        if (key in startSettings) {
-          // Handle objects, arrays, and primitives
-          if (typeof targetSettings[key] === 'object' && targetSettings[key] !== null) {
-            // For objects (including arrays)
-            if (typeof startSettings[key] === 'object' && startSettings[key] !== null) {
-              // Blend the nested objects/arrays
-              guiParams[key] = blendValues(startSettings[key], targetSettings[key], progress);
-            } else {
-              // Start is a primitive but target is an object - partial blend not possible
-              // For safety, keep as is until end of transition
-              if (progress >= 0.5) {
-                guiParams[key] = JSON.parse(JSON.stringify(targetSettings[key]));
+        // Copy property to guiParams with appropriate handling of different types
+        if (typeof blendedSettings[key] === 'object' && blendedSettings[key] !== null) {
+          // Special case for lights - ensure all properties are preserved
+          if (key === 'lights' && Array.isArray(blendedSettings[key])) {
+            if (!Array.isArray(guiParams[key])) {
+              guiParams[key] = [];
+            }
+            
+            // Limit to maximum lights in shader
+            const maxLights = Math.min(blendedSettings[key].length, MAX_LIGHTS_IN_SHADER);
+            
+            for (let i = 0; i < maxLights; i++) {
+              if (!guiParams[key][i]) {
+                guiParams[key][i] = {};
+              }
+              
+              // Make sure all properties are carried over from blended settings
+              if (blendedSettings[key][i]) {
+                for (const prop in blendedSettings[key][i]) {
+                  if (typeof blendedSettings[key][i][prop] === 'object' && 
+                      !Array.isArray(blendedSettings[key][i][prop])) {
+                    // Deep copy for nested objects (like position, color)
+                    if (!guiParams[key][i][prop]) {
+                      guiParams[key][i][prop] = {};
+                    }
+                    // Use structured clone to avoid reference issues
+                    guiParams[key][i][prop] = JSON.parse(
+                      JSON.stringify(blendedSettings[key][i][prop])
+                    );
+                  } else {
+                    // Direct assignment for primitives
+                    guiParams[key][i][prop] = blendedSettings[key][i][prop];
+                  }
+                }
               }
             }
+          } else if (Array.isArray(blendedSettings[key])) {
+            // Handle other arrays
+            guiParams[key] = JSON.parse(JSON.stringify(blendedSettings[key]));
           } else {
-            // For primitives
-            guiParams[key] = blendValues(startSettings[key], targetSettings[key], progress);
+            // Handle objects
+            if (typeof guiParams[key] !== 'object' || guiParams[key] === null) {
+              guiParams[key] = {};
+            }
+            // Deep copy the object to avoid reference issues
+            guiParams[key] = JSON.parse(JSON.stringify(blendedSettings[key]));
           }
+        } else {
+          // Handle primitive values with direct assignment
+          guiParams[key] = blendedSettings[key];
         }
       }
       
-      // Update material and GUI
+      // Update material uniforms
       updateAllMaterialUniforms();
       
-      // Note: We don't update GUI controllers during transition for performance
-      // They will be updated at the end of the transition
+      // Update GUI controllers during transition to reflect current blended values
+      if (gui) {
+        gui.controllersRecursive().forEach(controller => {
+          if (controller.updateDisplay) controller.updateDisplay();
+        });
+      }
     }
 
     // Function to directly apply the idle preset (helpful for debugging)

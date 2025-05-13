@@ -1,7 +1,7 @@
 {
-  "vertexDisplacementScale": 0.203,
-  "vertexAnimationAmount": 0,
-  "vertexAnimationSpeed": 5.252,
+  "vertexDisplacementScale": 0.261,
+  "vertexAnimationAmount": 0.0429999999999999,
+  "vertexAnimationSpeed": 4.244,
   "animationSpeed": 0.7583,
   "autoRotate": false,
   "autoRotateSpeed": 2,
@@ -24,7 +24,7 @@
   "lfNormalStrength": 0.198,
   "lfFlowScale": 0.22,
   "lfFlowStrength": 0.69,
-  "lfFlowTimeScale": 0.5,
+  "lfFlowTimeScale": 0.25,
   "lfEnablePeriodic": false,
   "lfPeriodicLengthX": 10,
   "lfPeriodicLengthY": 10,
@@ -35,36 +35,36 @@
   "hfOctaves": 1,
   "hfLacunarity": 1.84,
   "hfPersistence": 0.59,
-  "hfNormalStrength": 0.372,
+  "hfNormalStrength": 0.386,
   "hfFlowScale": 2.7,
   "hfFlowStrength": 1.94,
-  "hfFlowTimeScale": 0,
+  "hfFlowTimeScale": 0.5,
   "color1": {
-    "r": 0.9803921568627451,
-    "g": 0.3411764705882353,
-    "b": 0
+    "r": 0.7058823529411765,
+    "g": 0.11764705882352941,
+    "b": 0.01568627450980392
   },
   "color2": {
     "r": 0,
-    "g": 1,
-    "b": 0.6823529411764706
+    "g": 0.6392156862745098,
+    "b": 0.4392156862745098
   },
   "color3": {
-    "r": 0.39215686274509803,
+    "r": 0.3333333333333333,
     "g": 0.2,
-    "b": 0.5176470588235295
+    "b": 0.4235294117647059
   },
   "troughColorMultiplier": {
-    "r": 0.00392156862745098,
-    "g": 0.00392156862745098,
-    "b": 0.01568627450980392
+    "r": 0.03529411764705882,
+    "g": 0.03529411764705882,
+    "b": 0.08235294117647059
   },
-  "troughMin": 0.238,
+  "troughMin": 0.262,
   "troughMax": 0.693,
-  "troughGamma": 10,
-  "colorNoiseScale": 0.3001,
-  "colorNoiseTimeScale": 0,
-  "ambientIntensity": 10,
+  "troughGamma": 7.57,
+  "colorNoiseScale": 0.5491,
+  "colorNoiseTimeScale": 0.5,
+  "ambientIntensity": 4.02,
   "numLights": 3,
   "lights": [
     {
@@ -75,16 +75,16 @@
         "g": 1,
         "b": 1
       },
-      "intensity": 12.5,
-      "diffuseContribution": 0.28,
-      "specularContribution": 0.25,
+      "intensity": 19.58,
+      "diffuseContribution": 0.2,
+      "specularContribution": 0.28,
       "specularShininess": 98,
       "position": {
         "x": 0,
         "y": 30,
         "z": 19
       },
-      "diffuseHfNormalAmount": 0.02,
+      "diffuseHfNormalAmount": 1,
       "specularHfNormalAmount": 1
     },
     {
@@ -104,7 +104,7 @@
         "y": -8.5,
         "z": -9.6
       },
-      "diffuseHfNormalAmount": 0.75,
+      "diffuseHfNormalAmount": 0,
       "specularHfNormalAmount": 0.16
     },
     {

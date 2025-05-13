@@ -109,10 +109,8 @@ float simple_noise1d_neg1_pos1(float x) {
   // This ensures the result stays within a predictable bound before scaling.
   if(maxValue == 0.0)
     return 0.0; // Avoid division by zero, though unlikely here
-  float normalized_val = total / maxValue;
 
-  // Scale to [0, 1]
-  return normalized_val;
+  return total / maxValue;
 }
 // --- End of Simple 1D Noise ---
 
