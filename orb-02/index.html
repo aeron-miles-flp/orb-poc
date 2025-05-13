@@ -340,6 +340,8 @@
 
       // Update primitive uniforms
       uniforms.uVertexDisplacementScale.value = guiParams.vertexDisplacementScale;
+      uniforms.uVertexAnimationAmount.value = guiParams.vertexAnimationAmount;
+      uniforms.uVertexAnimationSpeed.value = guiParams.vertexAnimationSpeed;
       uniforms.uLfMasterScale.value = guiParams.lfMasterScale;
       uniforms.uLfPatternTimeScale.value = guiParams.lfPatternTimeScale;
       uniforms.uLfOctaves.value = Math.floor(guiParams.lfOctaves);
@@ -676,7 +678,7 @@
       scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
 
       camera = new THREE.PerspectiveCamera(guiParams.cameraFov || 60, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(guiParams.cameraPosition?.x || 0, guiParams.cameraPosition?.y || 0.75, guiParams.cameraPosition?.z || 3.0);
+      camera.position.set(0, 0.75, 3.0);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -720,6 +722,8 @@
       const mainUniforms = {
         uTime: { value: 0.0 },
         uVertexDisplacementScale: { value: guiParams.vertexDisplacementScale },
+        uVertexAnimationAmount: { value: guiParams.vertexAnimationAmount },
+        uVertexAnimationSpeed: { value: guiParams.vertexAnimationSpeed },
         uLfMasterScale: { value: guiParams.lfMasterScale },
         uLfPatternTimeScale: { value: guiParams.lfPatternTimeScale },
         uLfOctaves: { value: Math.floor(guiParams.lfOctaves) },
@@ -816,14 +820,6 @@
         {
           if (presetName && presetName !== 'Default')
           {
-            if (isTransitioning) {
-              console.log("Can't change presets during an active transition!");
-              alert("Please wait for the current transition to complete");
-              // Reset the dropdown to current preset
-              presetController.setValue(currentPresetName);
-              return;
-            }
-            
             applyPreset(presetName);
             presetState.currentPreset = presetName;
             currentPresetController.updateDisplay();
@@ -910,10 +906,16 @@
         .name('Delete Current Preset');
 
       presetFolder.open();
-
-      gui.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
+      
+      const lfDispFolder = gui.addFolder('LF Displacement');
+      // Add GUI controls for various parameters
+      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
-      gui.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
+      lfDispFolder.add(guiParams, 'vertexAnimationAmount', 0.0, 1.0, 0.001).name('Vertex Animation Amount')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
 
       const lfFolder = gui.addFolder('LF Noise (Displacement)');
       const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
@@ -960,7 +962,7 @@
       lfPeriodicFolder.close(); // Close by default unless needed open
       // --- END: Added Periodic Settings ---
 
-      lfFolder.open(); // Keep the main LF folder open
+      lfFolder.close();
 
       const colorFolder = gui.addFolder('Surface Colors');
       colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { sphere.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
@@ -1084,13 +1086,12 @@
           lightFolder.open(); // Keep first light folder open if active
         }
       }
-      lightingFolder.open(); // Keep the main Lighting folder open
-
+      lightingFolder.close();
 
       const sceneFolder = gui.addFolder('Scene & Camera');
       sceneFolder.add(guiParams, 'autoRotate').name('Auto Rotate').onChange(v => { controls.autoRotate = v; saveSettings(); });
       sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.01).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
-      sceneFolder.open(); // Keep Scene folder open
+      sceneFolder.close(); // Keep Scene folder open
 
       gui.controllersRecursive().forEach(controller =>
       {

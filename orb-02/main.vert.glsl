@@ -1,6 +1,8 @@
 // Uniforms
 uniform float uTime;
 uniform float uVertexDisplacementScale;
+uniform float uVertexAnimationAmount;
+uniform float uVertexAnimationSpeed; // Used for 1D noise time scaling
 
 // LF (Low Frequency) Noise parameters
 uniform float uLfMasterScale;
@@ -29,7 +31,7 @@ varying vec3 vAdvectedCoord; // The coordinate used for FBM lookup, for color no
 varying float vPatternTime;   // The time used for FBM lookup, for color noise
 varying float vGlobalTime;
 varying float vThickness;
-varying vec2 vUv; // << NEW: To pass UVs to the fragment shader
+varying vec2 vUv;
 
 // --- Nikita Miropolskiy's Simplex Noise (3D) ---
 vec3 random3(vec3 c) {
@@ -69,6 +71,50 @@ float simplex3d(vec3 p) {
   return dot(d, vec4(52.0));
 }
 // --- End of Nikita Miropolskiy's Simplex Noise ---
+
+// --- Simple 1D Noise with 2 Octaves (Output: -1 to 1) ---
+float random1(float n) {
+  return fract(sin(n) * 43758.5453123);
+}
+
+// Helper function for 1D noise in [0,1] range using smoothstep
+float noise1D_01(float x) {
+  float i = floor(x);
+  float f = fract(x);
+  // Smoothstep interpolation (Hermite interpolation: 3f^2 - 2f^3)
+  float u = f * f * (3.0 - 2.0 * f);
+  return mix(random1(i), random1(i + 1.0), u);
+}
+
+float simple_noise1d_neg1_pos1(float x) {
+  float total = 0.0;
+  float frequency = 1.0;
+  float amplitude = 1.0;
+  float maxValue = 0.0; // Used for normalization
+
+  // Octave 1
+  total += noise1D_01(x * frequency) * amplitude;
+  maxValue += amplitude;
+
+  // Octave 2
+  float lacunarity = 2.0;    // Frequency multiplier for the next octave
+  float persistence = 0.5;   // Amplitude multiplier for the next octave
+
+  frequency *= lacunarity;
+  amplitude *= persistence;
+  total += noise1D_01(x * frequency) * amplitude;
+  maxValue += amplitude;
+
+  // Normalize to [0, 1] based on the sum of amplitudes
+  // This ensures the result stays within a predictable bound before scaling.
+  if(maxValue == 0.0)
+    return 0.0; // Avoid division by zero, though unlikely here
+  float normalized_val = total / maxValue;
+
+  // Scale to [0, 1]
+  return normalized_val;
+}
+// --- End of Simple 1D Noise ---
 
 vec3 get_flow_vector(vec3 flow_coord_base, float flow_anim_time) {
   float flow_x = simplex3d(vec3(flow_coord_base.x + 13.7, flow_coord_base.y + 27.3, flow_coord_base.z + 5.1 + flow_anim_time));
@@ -129,37 +175,27 @@ float fbm_simplex3d_advected(vec3 p_advected_spatial_base, float pattern_time_va
 }
 
 void main() {
-    // Pass UV coordinates to fragment shader
-  vUv = uv; // << ASSIGN UVs
+  vUv = uv;
 
-    // 1. Calculate Flow Field
   vec3 flow_sample_coord = position * uLfFlowScale;
   float flow_anim_time = uTime * uLfFlowTimeScale;
   vec3 flow_vector = get_flow_vector(flow_sample_coord, flow_anim_time);
 
-    // 2. Prepare base coordinate for main FBM pattern
   vec3 p_local_spatial = position * uLfMasterScale;
-
-    // 3. Advect the base coordinate
   vec3 advected_spatial_coord = p_local_spatial + flow_vector * uLfFlowStrength;
-
-    // 4. Determine time for main FBM pattern evolution
   float pattern_anim_time = uTime * uLfPatternTimeScale;
 
-    // PASS ADVECTION INFO TO FRAGMENT SHADER
   vAdvectedCoord = advected_spatial_coord;
   vPatternTime = pattern_anim_time;
-  vGlobalTime = uTime; // Pass global time for HF evolution in frag
+  vGlobalTime = uTime;
 
-    // 5. Calculate FBM on advected coordinates for DISPLACEMENT
   int octaves = int(uLfOctaves);
-  float noiseVal = 0.0; // This is the FBM output in approx [-1, 1] range
+  float noiseVal = 0.0;
 
   if(octaves > 0) {
     noiseVal = fbm_simplex3d_advected(advected_spatial_coord, pattern_anim_time, octaves, uLfLacunarity, uLfPersistence, uEnablePeriodicLf, uPeriodicLengthLf);
   }
 
-    // 6. Calculate Perturbed Normal for LF displacement
   vec3 final_normal = normal;
   if(uLfNormalStrength > 0.0 && octaves > 0) {
     float eps = 0.01;
@@ -173,16 +209,16 @@ void main() {
     final_normal = normalize(normal - fbm_gradient * uLfNormalStrength);
   }
 
-    // 7. Calculate final displaced position
-  float actual_displacement = noiseVal * uVertexDisplacementScale;
+  // Calculate final displaced position
+  // The 1D noise (now with 2 octaves) for animation modulation. Output is [-1, 1].
+  float displacement_anim_factor = simple_noise1d_neg1_pos1(uTime * uVertexAnimationSpeed);
+  noiseVal *= uVertexDisplacementScale;
+  float actual_displacement = mix(noiseVal, noiseVal * displacement_anim_factor, uVertexAnimationAmount * uVertexAnimationSpeed);
+
   vec3 displacedPosition = position + normal * actual_displacement;
 
-    // --- Output to Rasterizer & Fragment Shader ---
   gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
-
-    // World position of the displaced vertex
   vWorldPosition = (modelMatrix * vec4(displacedPosition, 1.0)).xyz;
-
   vNormal = normalize(normalMatrix * final_normal);
   vec4 mvPosition = modelViewMatrix * vec4(displacedPosition, 1.0);
   vViewPosition = -mvPosition.xyz;
