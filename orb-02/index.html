@@ -980,6 +980,7 @@
     {
       gui = new GUI();
       gui.title("Shader Controls");
+      gui.close();
 
       // Create preset management folder
       const presetFolder = gui.addFolder('Presets');
@@ -1110,8 +1111,6 @@
       }, 'deletePreset')
         .name('Delete Current Preset');
 
-      presetFolder.open();
-
       const lfDispFolder = gui.addFolder('LF Displacement');
       // Add GUI controls for various parameters
       lfDispFolder.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
@@ -1121,6 +1120,7 @@
       lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
         .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
+      lfDispFolder.close();
 
       const lfFolder = gui.addFolder('LF Noise (Displacement)');
       const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
