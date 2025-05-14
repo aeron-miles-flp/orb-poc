@@ -28,6 +28,55 @@
       max-width: 300px;
     }
 
+    /* Preset Buttons Styling */
+    #preset-buttons {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 1000;
+    }
+
+    .preset-button {
+      padding: 12px 24px;
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 30px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      min-width: 120px;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+
+    .preset-button.active {
+      background-color: rgba(84, 84, 84, 0.9);
+      border-color: rgb(168, 168, 168);
+    }
+
+    /* Media query for mobile devices */
+    @media (max-width: 768px) {
+      #preset-buttons {
+        flex-wrap: wrap;
+        justify-content: center;
+        bottom: 10px;
+        width: 90%;
+      }
+      
+      .preset-button {
+        padding: 10px 16px;
+        font-size: 14px;
+        min-width: 100px;
+      }
+    }
+
     .lil-gui {
       top: 10px;
       right: 10px;
@@ -51,6 +100,14 @@
 
 <body>
   <div id="info">Drag to rotate. Scroll to zoom.</div>
+  
+  <div id="preset-buttons">
+    <button class="preset-button" data-preset="idle">Idle</button>
+    <button class="preset-button" data-preset="listening">Listening</button>
+    <button class="preset-button" data-preset="thinking">Thinking</button>
+    <button class="preset-button" data-preset="speaking">Speaking</button>
+  </div>
+  
   <script type="importmap">
         {
             "imports": {
@@ -102,7 +159,7 @@
     {
       try
       {
-        const response = await fetch('default-settings.json');
+        const response = await fetch('assets/default-settings.json');
         if (!response.ok)
         {
           throw new Error(`HTTP error! status: ${response.status} while fetching default-settings.json`);
@@ -120,7 +177,7 @@
     {
       try
       {
-        const response = await fetch('default-presets.json');
+        const response = await fetch('assets/default-presets.json');
         if (!response.ok)
         {
           throw new Error(`HTTP error! status: ${response.status} while fetching default-presets.json`);
@@ -797,7 +854,7 @@
       const textureLoader = new THREE.TextureLoader();
       try
       {
-        shininessTexture = await textureLoader.loadAsync('./smoothness.jpg'); // << LOAD TEXTURE
+        shininessTexture = await textureLoader.loadAsync('assets/smoothness.jpg'); // << LOAD TEXTURE
         shininessTexture.wrapS = THREE.RepeatWrapping;
         shininessTexture.wrapT = THREE.RepeatWrapping;
         console.log("Shininess texture loaded successfully.");
@@ -824,8 +881,8 @@
       {
         await loadTextures(); // << CALL TEXTURE LOADING
         [mainVertexShader, mainFragmentShader] = await Promise.all([
-          fetchShader('main.vert.glsl'),
-          fetchShader('main.frag.glsl')
+          fetchShader('assets/main.vert.glsl'),
+          fetchShader('assets/main.frag.glsl')
         ]);
         initScene();
         animateScene();
@@ -1512,6 +1569,57 @@
       }
     }
 
+    // Function to set up the preset button listeners
+    function setupPresetButtons() {
+      const presetButtons = document.querySelectorAll('.preset-button');
+      
+      // Function to update active button state
+      function updateActiveButton(activePreset) {
+        presetButtons.forEach(button => {
+          if (button.dataset.preset === activePreset) {
+            button.classList.add('active');
+          } else {
+            button.classList.remove('active');
+          }
+        });
+      }
+      
+      // Add click handlers to all preset buttons
+      presetButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const presetName = this.dataset.preset;
+          console.log(`Preset button clicked: ${presetName}`);
+          
+          // Apply the selected preset
+          if (presetName && (defaultPresets[presetName] || userPresets[presetName])) {
+            applyPreset(presetName);
+            
+            // Update button states
+            updateActiveButton(presetName);
+            
+            // Update current preset name in state
+            presetState.currentPreset = presetName;
+            
+            // Update GUI if it exists
+            if (gui) {
+              // Update all controllers to reflect current state
+              gui.controllersRecursive().forEach(controller => {
+                if (controller.updateDisplay) controller.updateDisplay();
+              });
+            }
+          } else {
+            console.error(`Preset not found: ${presetName}`);
+          }
+        });
+      });
+      
+      // Set the initial active button based on current preset
+      // This will be called after a short delay to ensure presets are loaded
+      setTimeout(() => {
+        updateActiveButton(currentPresetName);
+      }, 1500);
+    }
+
     async function main()
     {
       try
@@ -1521,6 +1629,10 @@
         loadUserPresets();
         loadSettings();
         await loadShadersAndTextures(); // << MODIFIED FUNCTION CALL
+        
+        // Setup the preset buttons after everything is loaded
+        setupPresetButtons();
+        
         setTimeout(forceApplyIdlePreset, 1000); // Force apply idle preset after 1 second
       } catch (error)
       {
