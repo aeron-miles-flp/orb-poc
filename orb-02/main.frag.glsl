@@ -8,6 +8,7 @@ varying vec3 vAdvectedCoord; // LF Advected object-like coord (already scaled by
 varying float vPatternTime;   // Time for LF pattern evolution
 varying float vGlobalTime;    // Global uTime from vertex shader for HF evolution
 varying vec2 vUv; // Texture coordinates from vertex shader
+varying float vDisplacementAnimFactor;
 
 // --- New Light Definition ---
 #define MAX_LIGHTS 4 // Define a maximum number of lights
@@ -25,6 +26,7 @@ struct Light {
 };
 uniform Light uLights[MAX_LIGHTS];
 uniform int uNumLights; // Actual number of active lights
+uniform float uTime;
 
 // Global Ambient Intensity
 uniform float uAmbientIntensity;
@@ -39,6 +41,7 @@ uniform float uTroughMax;
 uniform float uTroughGamma;
 uniform float uColorNoiseScale;
 uniform float uColorNoiseTimeScale;
+uniform float uColorNoiseAnimationAmount;
 
 // HF Noise Uniforms
 uniform bool uHfEnable;
@@ -54,6 +57,48 @@ uniform float uHfFlowTimeScale;
 
 // Shininess Texture Uniform
 uniform sampler2D uShininessMap; // << NEW UNIFORM
+
+// --- Simple 1D Noise with 2 Octaves (Output: -1 to 1) ---
+float random1(float n) {
+  return fract(sin(n) * 43758.5453123);
+}
+
+// Helper function for 1D noise in [0,1] range using smoothstep
+float noise1D_01(float x) {
+  float i = floor(x);
+  float f = fract(x);
+  // Smoothstep interpolation (Hermite interpolation: 3f^2 - 2f^3)
+  float u = f * f * (3.0 - 2.0 * f);
+  return mix(random1(i), random1(i + 1.0), u);
+}
+
+float simple_noise1d_pos1(float x) {
+  float total = 0.0;
+  float frequency = 1.0;
+  float amplitude = 1.0;
+  float maxValue = 0.0; // Used for normalization
+
+  // Octave 1
+  total += noise1D_01(x * frequency) * amplitude;
+  maxValue += amplitude;
+
+  // Octave 2
+  float lacunarity = 2.0;    // Frequency multiplier for the next octave
+  float persistence = 0.5;   // Amplitude multiplier for the next octave
+
+  frequency *= lacunarity;
+  amplitude *= persistence;
+  total += noise1D_01(x * frequency) * amplitude;
+  maxValue += amplitude;
+
+  // Normalize to [0, 1] based on the sum of amplitudes
+  // This ensures the result stays within a predictable bound before scaling.
+  if(maxValue == 0.0)
+    return 0.0; // Avoid division by zero, though unlikely here
+
+  return total / maxValue;
+}
+// --- End of Simple 1D Noise ---
 
 // --- Simplex Noise Functions (random3_frag, simplex3d_frag) ---
 vec3 random3_frag(vec3 c) {
@@ -144,7 +189,8 @@ void main() {
   } else {
     baseSurfaceColor = mix(uColor2, uColor3, segment - 1.0);
   }
-  float vNoiseMapped = pow(smoothstep(uTroughMin, uTroughMax, vNoise), uTroughGamma);
+  float colorAnimationFactor = vDisplacementAnimFactor;
+  float vNoiseMapped = pow(smoothstep(uTroughMin, uTroughMax, vNoise), mix(uTroughGamma, uTroughGamma * colorAnimationFactor, uColorNoiseAnimationAmount));
   vec3 troughEffectMultiplier = mix(uTroughColorMultiplier, vec3(1.0), vNoiseMapped);
   vec3 finalSurfaceColor = baseSurfaceColor * troughEffectMultiplier;
 
@@ -225,6 +271,6 @@ void main() {
   vec3 ambientColor = uAmbientIntensity * finalSurfaceColor;
   vec3 litColor = ambientColor + (totalDiffuse * finalSurfaceColor) + totalSpecular;
   litColor = pow(litColor, vec3(1.0 / 2.2));
-  // gl_FragColor = vec4(vec3(shininessFromMap), 1.0);
+
   gl_FragColor = vec4(litColor, 1.0);
 }

@@ -32,6 +32,7 @@ varying float vPatternTime;   // The time used for FBM lookup, for color noise
 varying float vGlobalTime;
 varying float vThickness;
 varying vec2 vUv;
+varying float vDisplacementAnimFactor;
 
 // --- Nikita Miropolskiy's Simplex Noise (3D) ---
 vec3 random3(vec3 c) {
@@ -86,7 +87,7 @@ float noise1D_01(float x) {
   return mix(random1(i), random1(i + 1.0), u);
 }
 
-float simple_noise1d_neg1_pos1(float x) {
+float simple_noise1d_pos1(float x) {
   float total = 0.0;
   float frequency = 1.0;
   float amplitude = 1.0;
@@ -209,7 +210,8 @@ void main() {
 
   // Calculate final displaced position
   // The 1D noise (now with 2 octaves) for animation modulation. Output is [-1, 1].
-  float displacement_anim_factor = simple_noise1d_neg1_pos1(uTime * uVertexAnimationSpeed);
+  float displacement_anim_factor = simple_noise1d_pos1(uTime * uVertexAnimationSpeed);
+  vDisplacementAnimFactor = displacement_anim_factor; // Store in varying
   float noiseDisp = noiseVal * uVertexDisplacementScale;
   float actual_displacement = mix(noiseDisp, noiseDisp * displacement_anim_factor, uVertexAnimationAmount);
 
