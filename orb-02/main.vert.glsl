@@ -210,8 +210,8 @@ void main() {
   // Calculate final displaced position
   // The 1D noise (now with 2 octaves) for animation modulation. Output is [-1, 1].
   float displacement_anim_factor = simple_noise1d_neg1_pos1(uTime * uVertexAnimationSpeed);
-  noiseVal *= uVertexDisplacementScale;
-  float actual_displacement = mix(noiseVal, noiseVal * displacement_anim_factor, uVertexAnimationAmount * uVertexAnimationSpeed);
+  float noiseDisp = noiseVal * uVertexDisplacementScale;
+  float actual_displacement = mix(noiseDisp, noiseDisp * displacement_anim_factor, uVertexAnimationAmount);
 
   vec3 displacedPosition = position + normal * actual_displacement;
 

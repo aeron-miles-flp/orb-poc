@@ -209,6 +209,10 @@
       let presetSettings;
       console.log("Applying preset:", presetName);
       
+      // Get current time for transition
+      const currentTime = performance.now();
+      const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
+      
       // Check user presets first
       if (userPresets[presetName])
       {
@@ -275,7 +279,7 @@
       
       // Set up the transition
       isTransitioning = true;
-      transitionStartTime = performance.now() * 0.001; // Convert to seconds
+      transitionStartTime = elapsedTimeSeconds; // Use the same time base as animation loop
       transitionDuration = transitionTime;
       startSettings = preparedStartSettings;
       targetSettings = preparedTargetSettings;
@@ -1100,7 +1104,7 @@
       colorFolder.add(guiParams, 'troughMax', 0.0, 1.0, 0.001).name('Trough Max').onChange(v => { sphere.material.uniforms.uTroughMax.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.01).name('Trough Gamma').onChange(v => { sphere.material.uniforms.uTroughGamma.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.001).name('Color Noise Scale').onChange(v => { sphere.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 0.5, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 10.0, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
       colorFolder.close(); // Close Color folder by default
 
       const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
@@ -1238,26 +1242,29 @@
       requestAnimationFrame(animateScene);
       const currentTime = performance.now();
 
-      if (!animationStartTime && currentTime > 0)
-      {
+      // Ensure animation start time is initialized
+      if (!animationStartTime) {
         animationStartTime = currentTime;
       }
+      
       const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
       
       // Handle transitions if active
       if (isTransitioning && startSettings && targetSettings) {
-        const transitionElapsedTime = elapsedTimeSeconds - transitionStartTime;
+        // Calculate how much time has passed since transition started
+        const transitionElapsedTime = Math.max(0, elapsedTimeSeconds - transitionStartTime);
+        
+        // Ensure we don't divide by zero and the progress is properly calculated
+        const transitionDurationSafe = Math.max(0.001, transitionDuration);
         
         // Ensure progress is clamped between 0 and 1, and follows a smooth curve
         // Using smoothstep for a more natural transition
-        const rawProgress = Math.min(Math.max(transitionElapsedTime / transitionDuration, 0.0), 1.0);
+        const rawProgress = Math.min(Math.max(transitionElapsedTime / transitionDurationSafe, 0.0), 1.0);
         // Smoothstep: 3x^2 - 2x^3 gives a nice ease-in, ease-out curve
         const progress = rawProgress * rawProgress * (3.0 - 2.0 * rawProgress);
         
-        // Log for debugging
-        if (Math.floor(rawProgress * 100) % 10 === 0) {
-          console.log(`Transition progress: ${rawProgress.toFixed(2)}`);
-        }
+        // Log for debugging - only log on significant changes to reduce console spam
+        const progressPercent = Math.floor(rawProgress * 100);
         
         // Blend the parameters based on progress
         if (rawProgress < 1.0) {
@@ -1265,7 +1272,7 @@
           blendCurrentSettings(progress);
         } else {
           // Transition complete
-          console.log("Transition complete!");
+          console.log(`Transition complete! Duration: ${transitionElapsedTime.toFixed(2)}s, Target: ${transitionDuration.toFixed(2)}s`);
           isTransitioning = false;
           
           // Apply final settings directly
