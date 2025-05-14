@@ -837,6 +837,7 @@
       }
     }
 
+    // Modified initScene function with fixed mobile positioning
     function initScene()
     {
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -847,17 +848,34 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
 
-      camera = new THREE.PerspectiveCamera(guiParams.cameraFov || 60, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0.75, 6.0);
+      // MOBILE FIX 1: Adjust field of view for mobile devices
+      const isMobile = window.innerWidth < 768;
+      const fov = isMobile ? 70 : (guiParams.cameraFov || 60); // Wider FOV for mobile
+      
+      camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
+      
+      // MOBILE FIX 2: Center camera properly and adjust distance for mobile
+      const cameraDistance = isMobile ? 4.5 : 6.0; // Closer on mobile to ensure sphere is visible
+      camera.position.set(0, 0, cameraDistance);
+      
+      // MOBILE FIX 3: Ensure camera looks at center of sphere
+      camera.lookAt(0, 0, 0);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.minDistance = guiParams.cameraMinDistance || 1.0;
-      controls.maxDistance = guiParams.cameraMaxDistance || 15.0;
+      
+      // MOBILE FIX 4: Set proper target for orbit controls
+      controls.target.set(0, 0, 0);
+      
+      // MOBILE FIX 5: Adjust distance constraints for mobile
+      const minDist = isMobile ? 1.5 : (guiParams.cameraMinDistance || 1.0);
+      const maxDist = isMobile ? 12.0 : (guiParams.cameraMaxDistance || 15.0);
+      controls.minDistance = minDist;
+      controls.maxDistance = maxDist;
+      
       controls.autoRotate = guiParams.autoRotate !== undefined ? guiParams.autoRotate : true;
       controls.autoRotateSpeed = guiParams.autoRotateSpeed !== undefined ? guiParams.autoRotateSpeed : 0.2;
-
 
       if (!animationStartTime) animationStartTime = performance.now();
 
@@ -940,10 +958,22 @@
       });
 
       sphere = new THREE.Mesh(sphereGeometry, mainMaterial);
+      
+      // MOBILE FIX 6: Ensure sphere is at origin
+      sphere.position.set(0, 0, 0);
       scene.add(sphere);
 
       setupGUI();
+      
+      // MOBILE FIX 7: Update controls after camera positioning
+      controls.update();
+      
       window.addEventListener('resize', onWindowResize);
+      
+      // MOBILE FIX 8: Handle orientation change for mobile devices
+      window.addEventListener('orientationchange', () => {
+        setTimeout(onWindowResize, 100);
+      });
     }
 
     function setupGUI()
@@ -1278,11 +1308,26 @@
       });
     }
 
+    // MOBILE FIX 9: Enhanced window resize handling
     function onWindowResize()
     {
+      const isMobile = window.innerWidth < 768;
+      
+      // Update camera aspect ratio
       camera.aspect = window.innerWidth / window.innerHeight;
+      
+      // Adjust field of view for mobile if needed
+      if (isMobile && camera.fov < 65) {
+        camera.fov = 70;
+      } else if (!isMobile && camera.fov > 65) {
+        camera.fov = 60;
+      }
+      
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      
+      // Force a redraw
+      renderer.render(scene, camera);
     }
 
     function animateScene()
