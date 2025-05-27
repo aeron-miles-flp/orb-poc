@@ -54,6 +54,7 @@
   "troughMax": 0.949,
   "troughGamma": 6.74,
   "colorNoiseScale": 0.628,
+  "colorNoiseGamma": 1.0,
   "colorNoiseTimeScale": 0,
   "specularColor": {
     "r": 0.4196078431372549,

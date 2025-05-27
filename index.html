@@ -26,6 +26,7 @@
       z-index: 100;
       font-size: 12px;
       max-width: 300px;
+      max-height:300px;
     }
 
     /* Preset Buttons Styling */
@@ -69,7 +70,7 @@
         bottom: 10px;
         width: 90%;
       }
-      
+
       .preset-button {
         padding: 10px 16px;
         font-size: 14px;
@@ -100,14 +101,14 @@
 
 <body>
   <div id="info">Drag to rotate. Scroll to zoom.</div>
-  
+
   <div id="preset-buttons">
     <button class="preset-button" data-preset="idle">Idle</button>
     <button class="preset-button" data-preset="listening">Listening</button>
     <button class="preset-button" data-preset="thinking">Thinking</button>
     <button class="preset-button" data-preset="speaking">Speaking</button>
   </div>
-  
+
   <script type="importmap">
         {
             "imports": {
@@ -121,8 +122,10 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import GUI from 'lil-gui';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // <-- ADD THIS LINE
 
     let scene, camera, renderer, sphere, controls;
+    let bCellModel;
     let animationStartTime;
     let gui;
     const SETTINGS_KEY = 'flowNoiseShaderSettings_v4';
@@ -153,7 +156,16 @@
     const MAX_LIGHTS_IN_SHADER = 4;
 
     let mainVertexShader, mainFragmentShader;
-    let shininessTexture; // << NEW VARIABLE FOR TEXTURE
+    let shininessTexture;
+    let ctaoTexture;
+    let normalTexture;
+    let normalTextureLF;
+    let dispTexture;
+    let dispMapEnabled = true;
+    let dispMapNormalStrength = 1.0;
+    let dispMapScale = 1.0;
+    let dispMapOffset = new THREE.Vector2(0.0, 0.0);
+    let mainMaterial;
 
     async function fetchExternalDefaultSettings()
     {
@@ -302,7 +314,7 @@
 
       // If transition time is 0 or we don't have any shaders loaded yet, 
       // apply immediately without transition
-      if (transitionTime <= 0 || !sphere || !sphere.material || !sphere.material.uniforms)
+      if (transitionTime <= 0 || !bCellModel || !bCellModel.material || !bCellModel.material.uniforms)
       {
         // Apply preset immediately without transition
         applyPresetSettingsImmediately(presetSettings);
@@ -424,7 +436,7 @@
       }
 
       // Update all material uniforms
-      if (sphere && sphere.material && sphere.material.uniforms)
+      if (bCellModel && bCellModel.material && bCellModel.material.uniforms)
       {
         updateAllMaterialUniforms();
       }
@@ -471,9 +483,73 @@
     function updateAllMaterialUniforms()
     {
       // Update all the uniforms based on current guiParams
-      if (!sphere || !sphere.material || !sphere.material.uniforms) return;
+      if (!bCellModel || !bCellModel.material || !bCellModel.material.uniforms) return;
 
-      const uniforms = sphere.material.uniforms;
+      const uniforms = bCellModel.material.uniforms;
+      // Update transformation matrices for sphere and camera
+      // Get the view matrix from the camera
+      camera.updateMatrixWorld();
+      const viewMatrix = camera.matrixWorldInverse;
+
+      // Get the model matrix from the sphere
+      bCellModel.updateMatrixWorld();
+      const modelMatrix = bCellModel.matrixWorld;
+
+      // Calculate ModelView matrix (View * Model)
+      const modelViewMatrix = new THREE.Matrix4().multiplyMatrices(viewMatrix, modelMatrix);
+
+      // Calculate inverse matrices
+      const inverseModelViewMatrix = new THREE.Matrix4().copy(modelViewMatrix).invert();
+      const inverseViewMatrix = new THREE.Matrix4().copy(viewMatrix).invert();
+
+      // Extract 3x3 normal matrices (upper-left 3x3 of the 4x4 matrices)
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(modelViewMatrix);
+      const inverseNormalMatrix = new THREE.Matrix3().copy(normalMatrix).invert();
+
+      // Extract 3x3 view matrices for direction/normal transformations
+      const viewMatrix3 = new THREE.Matrix3().setFromMatrix4(viewMatrix);
+      const inverseViewMatrix3 = new THREE.Matrix3().copy(viewMatrix3).invert();
+
+      // Update uniforms if they exist
+      if (uniforms.uNormalMatrix)
+      {
+        uniforms.uNormalMatrix.value.copy(normalMatrix);
+      }
+
+      if (uniforms.uInverseNormalMatrix)
+      {
+        uniforms.uInverseNormalMatrix.value.copy(inverseNormalMatrix);
+      }
+
+      if (uniforms.uModelViewMatrix)
+      {
+        uniforms.uModelViewMatrix.value.copy(modelViewMatrix);
+      }
+
+      if (uniforms.uInverseModelViewMatrix)
+      {
+        uniforms.uInverseModelViewMatrix.value.copy(inverseModelViewMatrix);
+      }
+
+      if (uniforms.uViewMatrix)
+      {
+        uniforms.uViewMatrix.value.copy(viewMatrix3);
+      }
+
+      if (uniforms.uInverseViewMatrix)
+      {
+        uniforms.uInverseViewMatrix.value.copy(inverseViewMatrix3);
+      }
+
+      if (uniforms.uViewMatrixFull)
+      {
+        uniforms.uViewMatrixFull.value.copy(viewMatrix);
+      }
+
+      if (uniforms.uInverseViewMatrixFull)
+      {
+        uniforms.uInverseViewMatrixFull.value.copy(inverseViewMatrix);
+      }
 
       // Update primitive uniforms with safety checks for animation parameters
       // For animation parameters, ensure they are valid numbers to prevent NaN issues
@@ -563,8 +639,27 @@
       uniforms.uTroughMax.value = guiParams.troughMax;
       uniforms.uTroughGamma.value = guiParams.troughGamma;
       uniforms.uColorNoiseScale.value = guiParams.colorNoiseScale;
+      uniforms.uColorNoiseGamma.value = guiParams.colorNoiseGamma;
       uniforms.uColorNoiseTimeScale.value = guiParams.colorNoiseTimeScale;
       uniforms.uColorNoiseAnimationAmount.value = guiParams.colorNoiseAnimationAmount;
+
+      // SSS settings
+      uniforms.uSSSEnable.value = guiParams.SSSEnable;
+      uniforms.uSSSIntensity.value = guiParams.SSSIntensity;
+      // Color settings
+      if (uniforms.uSSSColor && uniforms.uSSSColor.value)
+      {
+        uniforms.uSSSColor.value.setRGB(
+          guiParams.SSSColor.r,
+          guiParams.SSSColor.g,
+          guiParams.SSSColor.b
+        );
+      }
+      uniforms.uSSSSurfaceColorContribution.value = guiParams.SSSSurfaceColorContribution;
+      uniforms.uSSSThicknessPower.value = guiParams.SSSThicknessPower;
+      uniforms.uSSSDistortion.value = guiParams.SSSDistortion;
+      uniforms.uSSSAmbient.value = guiParams.SSSAmbient;
+      uniforms.uSSSAttenuation.value = guiParams.SSSAttenuation;
 
       // Lighting settings
       uniforms.uAmbientIntensity.value = guiParams.ambientIntensity;
@@ -591,6 +686,7 @@
           lightUniform.intensity = lightData.intensity !== undefined ? lightData.intensity : 0;
           lightUniform.diffuseContribution = lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0;
           lightUniform.specularContribution = lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0;
+          lightUniform.sssContribution = lightData.sssContribution !== undefined ? lightData.sssContribution : 1.0;
           lightUniform.specularShininess = lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0;
           lightUniform.position.set(
             lightData.position?.x ?? 0,
@@ -682,7 +778,7 @@
             JSON.parse(JSON.stringify(baseDefaults.lights[i])) :
             {
               name: `Light ${i + 1}`, enabled: false, color: { r: 0.5, g: 0.5, b: 0.5 }, intensity: 0.0,
-              diffuseContribution: 0.0, specularContribution: 0.0, specularShininess: 32,
+              diffuseContribution: 0.0, specularContribution: 0.0, sssContribution: 1.0, specularShininess: 32,
               position: { x: 0, y: 0, z: (i + 1) * 2.0 },
               diffuseHfNormalAmount: 1.0, specularHfNormalAmount: 1.0
             };
@@ -854,9 +950,21 @@
       const textureLoader = new THREE.TextureLoader();
       try
       {
-        shininessTexture = await textureLoader.loadAsync('assets/smoothness.jpg'); // << LOAD TEXTURE
+        shininessTexture = await textureLoader.loadAsync('assets/smoothness.jpg');
         shininessTexture.wrapS = THREE.RepeatWrapping;
         shininessTexture.wrapT = THREE.RepeatWrapping;
+        ctaoTexture = await textureLoader.loadAsync('assets/BCell_CTAO.png');
+        ctaoTexture.wrapS = THREE.RepeatWrapping;
+        ctaoTexture.wrapT = THREE.RepeatWrapping;
+        normalTexture = await textureLoader.loadAsync('assets/BCell_NORMAL.png')
+        normalTexture.wrapS = THREE.RepeatWrapping;
+        normalTexture.wrapT = THREE.RepeatWrapping;
+        normalTextureLF = await textureLoader.loadAsync('assets/BCell_NORMAL_LF.png')
+        normalTextureLF.wrapS = THREE.RepeatWrapping;
+        normalTextureLF.wrapT = THREE.RepeatWrapping;
+        dispTexture = await textureLoader.loadAsync('assets/BCell_DISP_LF.png')
+        dispTexture.wrapS = THREE.RepeatWrapping;
+        dispTexture.wrapT = THREE.RepeatWrapping;
         console.log("Shininess texture loaded successfully.");
       } catch (error)
       {
@@ -870,31 +978,217 @@
         context.fillStyle = 'white'; // Default to full shininess if texture fails
         context.fillRect(0, 0, 1, 1);
         shininessTexture = new THREE.CanvasTexture(canvas);
-
+        ctaoTexture = new THREE.CanvasTexture(canvas);
+        normalTexture = new THREE.CanvasTexture(canvas);
+        normalTextureLF = new THREE.CanvasTexture(canvas);
+        dispTexture = new THREE.CanvasTexture(canvas);
       }
     }
 
-
-    async function loadShadersAndTextures() // << MODIFIED FUNCTION NAME
+    async function loadShadersAndTextures()
     {
       try
       {
-        await loadTextures(); // << CALL TEXTURE LOADING
+        await loadTextures();
         [mainVertexShader, mainFragmentShader] = await Promise.all([
           fetchShader('assets/main.vert.glsl'),
           fetchShader('assets/main.frag.glsl')
         ]);
-        initScene();
+
+        // Create the material once shaders are loaded
+        const lightsUniformValue = [];
+        const numActiveLightsForShader = Math.min(
+          guiParams.numLights,
+          guiParams.lights.length,
+          MAX_LIGHTS_IN_SHADER
+        );
+
+        for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+        {
+          const lightData = guiParams.lights[i];
+          lightsUniformValue.push({
+            enabled: (i < numActiveLightsForShader) ? (lightData.enabled !== undefined ? lightData.enabled : false) : false,
+            color: new THREE.Color().setRGB(lightData.color?.r ?? 0, lightData.color?.g ?? 0, lightData.color?.b ?? 0),
+            intensity: lightData.intensity !== undefined ? lightData.intensity : 0,
+            diffuseContribution: lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0,
+            specularContribution: lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0,
+            sssContribution: lightData.sssContribution !== undefined ? lightData.sssContribution : 1.0,
+            specularShininess: lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0,
+            position: new THREE.Vector3(lightData.position?.x ?? 0, lightData.position?.y ?? 0, lightData.position?.z ?? 5.0),
+            diffuseHfNormalAmount: lightData.diffuseHfNormalAmount !== undefined ? lightData.diffuseHfNormalAmount : 1.0,
+            specularHfNormalAmount: lightData.specularHfNormalAmount !== undefined ? lightData.specularHfNormalAmount : 1.0
+          });
+        }
+
+        const mainUniforms = {
+          uTime: { value: 0.0 },
+          uNormalMatrix: { value: new THREE.Matrix3() },
+          uInverseNormalMatrix: { value: new THREE.Matrix3() },
+          uModelViewMatrix: { value: new THREE.Matrix4() },
+          uInverseModelViewMatrix: { value: new THREE.Matrix4() },
+          uViewMatrix: { value: new THREE.Matrix3() },
+          uInverseViewMatrix: { value: new THREE.Matrix3() },
+          uViewMatrixFull: { value: new THREE.Matrix4() },
+          uInverseViewMatrixFull: { value: new THREE.Matrix4() },
+          uVertexDisplacementScale: { value: guiParams.vertexDisplacementScale },
+          uVertexAnimationAmount: { value: guiParams.vertexAnimationAmount },
+          uVertexAnimationSpeed: { value: guiParams.vertexAnimationSpeed },
+          uLfMasterScale: { value: guiParams.lfMasterScale },
+          uLfPatternTimeScale: { value: guiParams.lfPatternTimeScale },
+          uLfOctaves: { value: Math.floor(guiParams.lfOctaves) },
+          uLfLacunarity: { value: guiParams.lfLacunarity },
+          uLfPersistence: { value: guiParams.lfPersistence },
+          uLfNoiseContrastLower: { value: guiParams.lfNoiseContrastLower },
+          uLfNoiseContrastUpper: { value: guiParams.lfNoiseContrastUpper },
+          uLfNormalStrength: { value: guiParams.lfNormalStrength },
+          uLfFlowScale: { value: guiParams.lfFlowScale },
+          uLfFlowStrength: { value: guiParams.lfFlowStrength },
+          uLfFlowTimeScale: { value: guiParams.lfFlowTimeScale },
+          uEnablePeriodicLf: { value: guiParams.lfEnablePeriodic },
+          uPeriodicLengthLf: { value: new THREE.Vector3(guiParams.lfPeriodicLengthX, guiParams.lfPeriodicLengthY, guiParams.lfPeriodicLengthZ) },
+          uHfEnable: { value: guiParams.hfEnable },
+          uHfMasterScale: { value: guiParams.hfMasterScale },
+          uHfPatternTimeScale: { value: guiParams.hfPatternTimeScale },
+          uHfOctaves: { value: Math.floor(guiParams.hfOctaves) },
+          uHfLacunarity: { value: guiParams.hfLacunarity },
+          uHfPersistence: { value: guiParams.hfPersistence },
+          uHfNormalStrength: { value: guiParams.hfNormalStrength },
+          uHfFlowScale: { value: guiParams.hfFlowScale },
+          uHfFlowStrength: { value: guiParams.hfFlowStrength },
+          uHfFlowTimeScale: { value: guiParams.hfFlowTimeScale },
+          uColor1: { value: new THREE.Color().setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b) },
+          uColor2: { value: new THREE.Color().setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b) },
+          uColor3: { value: new THREE.Color().setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b) },
+          uTroughColorMultiplier: { value: new THREE.Vector3(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b) },
+          uTroughMin: { value: guiParams.troughMin },
+          uTroughMax: { value: guiParams.troughMax },
+          uTroughGamma: { value: guiParams.troughGamma },
+          uColorNoiseScale: { value: guiParams.colorNoiseScale },
+          uColorNoiseGamma: { value: guiParams.colorNoiseGamma },
+          uColorNoiseTimeScale: { value: guiParams.colorNoiseTimeScale },
+          uColorNoiseAnimationAmount: { value: guiParams.colorNoiseAnimationAmount },
+          uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
+          uSSSEnable: { value: guiParams.SSSEnable },
+          uSSSIntensity: { value: guiParams.SSSIntensity },
+          uSSSColor: { value: new THREE.Color().setRGB(guiParams.SSSColor.r, guiParams.SSSColor.g, guiParams.SSSColor.b) },
+          uSSSSurfaceColorContribution: { value: guiParams.SSSSurfaceColorContribution },
+          uSSSThicknessPower: { value: guiParams.SSSThicknessPower },
+          uSSSDistortion: { value: guiParams.SSSDistortion },
+          uSSSAmbient: { value: guiParams.SSSAmbient },
+          uSSSAttenuation: { value: guiParams.SSSAttenuation },
+          uLights: { value: lightsUniformValue },
+          uNumLights: { value: numActiveLightsForShader },
+          uShininessMap: { value: shininessTexture },
+          uCTAOMap: { value: ctaoTexture },
+          uNormalMap: { value: normalTexture },
+          uNormalMapLF: { value: normalTextureLF },
+          uDispMap: { value: dispTexture },
+          uDispMapEnable: { value: dispMapEnabled },
+          uDispMapNormalStrength: { value: dispMapNormalStrength },
+          uDispMapScale: { value: dispMapScale },
+          uDispMapOffset: { value: dispMapOffset }
+        };
+
+        mainMaterial = new THREE.ShaderMaterial({ // Assign to the global mainMaterial
+          vertexShader: mainVertexShader,
+          fragmentShader: mainFragmentShader,
+          uniforms: mainUniforms,
+        });
+
+        // Now load the GLB model and initialize the scene
+        await loadGLBModel(); // We'll create this function next
+
+        initScene(); // initScene will now use the loaded model and material
         animateScene();
+
       } catch (error)
       {
-        console.error("Error loading shaders or textures:", error); // << MODIFIED ERROR
-        document.getElementById('info').innerHTML = `Error loading shaders/textures: ${error.message}. Please check console.`;
+        console.error("Error loading shaders, textures, or model:", error);
+        document.getElementById('info').innerHTML = `Error loading assets: ${error.message}. Please check console.`;
         throw error;
       }
     }
 
-    // Modified initScene function with fixed mobile positioning
+    async function loadGLBModel()
+    {
+      const loader = new GLTFLoader();
+      return new Promise((resolve, reject) =>
+      {
+        loader.load(
+          'assets/BCell.glb', // <-- YOUR BCell.glb PATH
+          (gltf) =>
+          {
+            console.log("BCell.glb loaded successfully", gltf);
+            // The loaded GLB might be a scene with multiple objects.
+            // You need to find the mesh you want to apply the shader to.
+            // Often, it's gltf.scene or gltf.scene.children[0]
+            // You might need to traverse it if it's more complex:
+            gltf.scene.traverse(function (child)
+            {
+              if (child.isMesh)
+              {
+                // Assuming your BCell model has one primary mesh you want to use
+                // If it has multiple, you might need to handle them differently
+                // or combine them.
+                bCellModel = child; // Assign the first mesh found to bCellModel
+
+                // IMPORTANT: Ensure your GLB model has UVs and normals.
+                // If your shader uses tangents (e.g., for normal mapping),
+                // ensure they are present or compute them.
+                if (bCellModel.geometry)
+                {
+                  console.log("BCell geometry missing tangents, computing them.");
+                  bCellModel.geometry.computeTangents();
+                  bCellModel.scale.set(0.3, 0.3, 0.3);
+                }
+                return; // Exit traverse once the first mesh is found and assigned
+              }
+            });
+
+            if (!bCellModel && gltf.scene.children.length > 0 && gltf.scene.children[0].isMesh)
+            {
+              // Fallback if traverse didn't find a mesh but the first child is one
+              bCellModel = gltf.scene.children[0];
+              if (bCellModel.geometry && !bCellModel.geometry.attributes.tangent)
+              {
+                bCellModel.geometry.computeTangents();
+              }
+            } else if (!bCellModel)
+            {
+              // If the root of the GLTF scene itself is the mesh:
+              if (gltf.scene.isMesh)
+              {
+                bCellModel = gltf.scene;
+                if (bCellModel.geometry && !bCellModel.geometry.attributes.tangent)
+                {
+                  bCellModel.geometry.computeTangents();
+                }
+              } else
+              {
+                console.error("Could not find a suitable mesh in BCell.glb");
+                reject(new Error("No mesh found in GLB"));
+                return;
+              }
+            }
+
+            // You might need to scale, rotate, or position your model
+            // bCellModel.scale.set(0.5, 0.5, 0.5); // Example scaling
+            // bCellModel.position.set(0, -1, 0); // Example positioning
+
+            resolve();
+          },
+          undefined, // onProgress callback (optional)
+          (error) =>
+          {
+            console.error('An error happened while loading BCell.glb:', error);
+            document.getElementById('info').innerHTML += `<br>Error loading BCell.glb: ${error.message}.`;
+            reject(error);
+          }
+        );
+      });
+    }
+
+
     function initScene()
     {
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -905,130 +1199,62 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
 
-      // MOBILE FIX 1: Adjust field of view for mobile devices
-      const isMobile = window.innerWidth < 768;
-      const fov = isMobile ? 70 : (guiParams.cameraFov || 60); // Wider FOV for mobile
-      
+      const fov = 70;
       camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
-      
-      // MOBILE FIX 2: Center camera properly and adjust distance for mobile
-      const cameraDistance = isMobile ? 4.5 : 6.0; // Closer on mobile to ensure sphere is visible
-      camera.position.set(0, 0, cameraDistance);
-      
-      // MOBILE FIX 3: Ensure camera looks at center of sphere
+      camera.position.set(0, 0, 7.0);
       camera.lookAt(0, 0, 0);
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      
-      // MOBILE FIX 4: Set proper target for orbit controls
       controls.target.set(0, 0, 0);
-      
-      // MOBILE FIX 5: Adjust distance constraints for mobile
-      const minDist = isMobile ? 1.5 : (guiParams.cameraMinDistance || 1.0);
-      const maxDist = isMobile ? 12.0 : (guiParams.cameraMaxDistance || 15.0);
+      const minDist = 1.5;
+      const maxDist = 12.0;
       controls.minDistance = minDist;
       controls.maxDistance = maxDist;
-      
       controls.autoRotate = guiParams.autoRotate !== undefined ? guiParams.autoRotate : true;
       controls.autoRotateSpeed = guiParams.autoRotateSpeed !== undefined ? guiParams.autoRotateSpeed : 0.2;
 
       if (!animationStartTime) animationStartTime = performance.now();
 
-      const sphereGeometry = new THREE.SphereGeometry(1, 96, 96);
-      // IMPORTANT: Ensure your geometry has UVs. SphereGeometry has them by default.
-      // If using a custom geometry, make sure it has UV attributes.
-      sphereGeometry.computeTangents();
+      // REMOVE SphereGeometry creation:
+      // const sphereGeometry = new THREE.SphereGeometry(1, 512, 512);
+      // sphereGeometry.computeTangents();
 
-      const lightsUniformValue = [];
-      const numActiveLightsForShader = Math.min(
-        guiParams.numLights,
-        guiParams.lights.length,
-        MAX_LIGHTS_IN_SHADER
-      );
+      // The mainMaterial is now created in loadShadersAndTextures
+      // const mainMaterial = new THREE.ShaderMaterial({ ... });
 
-      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      if (bCellModel && mainMaterial)
       {
-        const lightData = guiParams.lights[i];
-        lightsUniformValue.push({
-          enabled: (i < numActiveLightsForShader) ? (lightData.enabled !== undefined ? lightData.enabled : false) : false,
-          color: new THREE.Color().setRGB(lightData.color?.r ?? 0, lightData.color?.g ?? 0, lightData.color?.b ?? 0),
-          intensity: lightData.intensity !== undefined ? lightData.intensity : 0,
-          diffuseContribution: lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0,
-          specularContribution: lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0,
-          specularShininess: lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0,
-          position: new THREE.Vector3(lightData.position?.x ?? 0, lightData.position?.y ?? 0, lightData.position?.z ?? 5.0),
-          diffuseHfNormalAmount: lightData.diffuseHfNormalAmount !== undefined ? lightData.diffuseHfNormalAmount : 1.0,
-          specularHfNormalAmount: lightData.specularHfNormalAmount !== undefined ? lightData.specularHfNormalAmount : 1.0
-        });
+        bCellModel.material = mainMaterial; // Apply the shader material to the loaded model
+
+        // Adjust scale if necessary. The original sphere had a radius of 1.
+        // If your BCell.glb is much larger or smaller, you'll want to scale it
+        // to a comparable size for the shader effects and camera setup to work well.
+        // Example: Fit to a unit bounding box then scale to desired size
+        const box = new THREE.Box3().setFromObject(bCellModel);
+        const size = box.getSize(new THREE.Vector3());
+        const scaleFactor = 1.0 / Math.max(size.x, size.y, size.z); // Scale to fit roughly in a 1x1x1 box
+        // bCellModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        // You might want a specific size, e.g., diameter of 2 (like the old sphere)
+        bCellModel.scale.set(scaleFactor * 1.0, scaleFactor * 1.0, scaleFactor * 1.0); // Adjust the '1.0' for desired apparent size
+
+        bCellModel.position.set(0, 0, 0); // Ensure it's at the origin
+        scene.add(bCellModel);
+        console.log("BCell model added to scene with shader material.");
+      } else
+      {
+        console.error("BCell model or mainMaterial not ready for initScene.");
+        if (!bCellModel) document.getElementById('info').innerHTML += "<br>BCell model failed to load or process correctly.";
+        if (!mainMaterial) document.getElementById('info').innerHTML += "<br>Shader material failed to initialize.";
+        return; // Stop if essential parts are missing
       }
 
-      const mainUniforms = {
-        uTime: { value: 0.0 },
-        uVertexDisplacementScale: { value: guiParams.vertexDisplacementScale },
-        uVertexAnimationAmount: { value: guiParams.vertexAnimationAmount },
-        uVertexAnimationSpeed: { value: guiParams.vertexAnimationSpeed },
-        uLfMasterScale: { value: guiParams.lfMasterScale },
-        uLfPatternTimeScale: { value: guiParams.lfPatternTimeScale },
-        uLfOctaves: { value: Math.floor(guiParams.lfOctaves) },
-        uLfLacunarity: { value: guiParams.lfLacunarity },
-        uLfPersistence: { value: guiParams.lfPersistence },
-        uLfNoiseContrastLower: { value: guiParams.lfNoiseContrastLower },
-        uLfNoiseContrastUpper: { value: guiParams.lfNoiseContrastUpper },
-        uLfNormalStrength: { value: guiParams.lfNormalStrength },
-        uLfFlowScale: { value: guiParams.lfFlowScale },
-        uLfFlowStrength: { value: guiParams.lfFlowStrength },
-        uLfFlowTimeScale: { value: guiParams.lfFlowTimeScale },
-        uEnablePeriodicLf: { value: guiParams.lfEnablePeriodic },
-        uPeriodicLengthLf: { value: new THREE.Vector3(guiParams.lfPeriodicLengthX, guiParams.lfPeriodicLengthY, guiParams.lfPeriodicLengthZ) },
-        uHfEnable: { value: guiParams.hfEnable },
-        uHfMasterScale: { value: guiParams.hfMasterScale },
-        uHfPatternTimeScale: { value: guiParams.hfPatternTimeScale },
-        uHfOctaves: { value: Math.floor(guiParams.hfOctaves) },
-        uHfLacunarity: { value: guiParams.hfLacunarity },
-        uHfPersistence: { value: guiParams.hfPersistence },
-        uHfNormalStrength: { value: guiParams.hfNormalStrength },
-        uHfFlowScale: { value: guiParams.hfFlowScale },
-        uHfFlowStrength: { value: guiParams.hfFlowStrength },
-        uHfFlowTimeScale: { value: guiParams.hfFlowTimeScale },
-        uColor1: { value: new THREE.Color().setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b) },
-        uColor2: { value: new THREE.Color().setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b) },
-        uColor3: { value: new THREE.Color().setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b) },
-        uTroughColorMultiplier: { value: new THREE.Vector3(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b) },
-        uTroughMin: { value: guiParams.troughMin },
-        uTroughMax: { value: guiParams.troughMax },
-        uTroughGamma: { value: guiParams.troughGamma },
-        uColorNoiseScale: { value: guiParams.colorNoiseScale },
-        uColorNoiseTimeScale: { value: guiParams.colorNoiseTimeScale },
-        uColorNoiseAnimationAmount: {value: guiParams.colorNoiseAnimationAmount},
-        uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
-        uLights: { value: lightsUniformValue },
-        uNumLights: { value: numActiveLightsForShader },
-        uShininessMap: { value: shininessTexture }
-      };
-
-      const mainMaterial = new THREE.ShaderMaterial({
-        vertexShader: mainVertexShader,
-        fragmentShader: mainFragmentShader,
-        uniforms: mainUniforms,
-      });
-
-      sphere = new THREE.Mesh(sphereGeometry, mainMaterial);
-      
-      // MOBILE FIX 6: Ensure sphere is at origin
-      sphere.position.set(0, 0, 0);
-      scene.add(sphere);
-
-      setupGUI();
-      
-      // MOBILE FIX 7: Update controls after camera positioning
+      setupGUI(); // This function will need to be aware of 'bCellModel' instead of 'sphere'
       controls.update();
-      
       window.addEventListener('resize', onWindowResize);
-      
-      // MOBILE FIX 8: Handle orientation change for mobile devices
-      window.addEventListener('orientationchange', () => {
+      window.addEventListener('orientationchange', () =>
+      {
         setTimeout(onWindowResize, 100);
       });
     }
@@ -1170,115 +1396,129 @@
 
       const lfDispFolder = gui.addFolder('LF Displacement');
       // Add GUI controls for various parameters
-      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
-        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -2.0, 2.0, 0.001).name('Vertex Disp. Scale')
+        .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'vertexAnimationAmount', -1.0, 1.0, 0.001).name('Vertex Animation Amount')
-        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
+        .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
-        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
+        .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
       lfDispFolder.close();
 
       const lfFolder = gui.addFolder('LF Noise (Displacement)');
       const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
-      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.01).name('Master Scale').onChange(v => { sphere.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.001).name('Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfOctaves', 1, 8, 1).name('Octaves').onChange(v => { sphere.material.uniforms.uLfOctaves.value = Math.floor(v); saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.01).name('Lacunarity').onChange(v => { sphere.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.01).name('Persistence').onChange(v => { sphere.material.uniforms.uLfPersistence.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.01).name('Contrast Min').onChange(v => { sphere.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.01).name('Contrast Max').onChange(v => { sphere.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.001).name('LF Normal Strength').onChange(v => { sphere.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.01).name('Master Scale').onChange(v => { bCellModel.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.001).name('Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfOctaves', 1, 8, 1).name('Octaves').onChange(v => { bCellModel.material.uniforms.uLfOctaves.value = Math.floor(v); saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.01).name('Lacunarity').onChange(v => { bCellModel.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.01).name('Persistence').onChange(v => { bCellModel.material.uniforms.uLfPersistence.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.01).name('Contrast Min').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.01).name('Contrast Max').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.001).name('LF Normal Strength').onChange(v => { bCellModel.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
+      lfBaseNoiseFolder.close();
+      lfBaseNoiseFolder.hide();
 
       const lfFlowFolder = lfFolder.addFolder('Flow Field (Advection)');
-      lfFlowFolder.add(guiParams, 'lfFlowScale', 0.001, 1.0, 0.01).name('Flow Detail Scale').onChange(v => { sphere.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
-      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { sphere.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
-      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { sphere.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowScale', 0.001, 1.0, 0.01).name('Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { bCellModel.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
 
       // --- START: Added Periodic Settings ---
       const lfPeriodicFolder = lfFolder.addFolder('Periodic Tiling');
       lfPeriodicFolder.add(guiParams, 'lfEnablePeriodic').name('Enable Periodic Tiling')
         .onChange(v =>
         {
-          sphere.material.uniforms.uEnablePeriodicLf.value = v;
+          bCellModel.material.uniforms.uEnablePeriodicLf.value = v;
           saveSettings();
         });
       lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthX', 1.0, 20.0, 0.1).name('Period Length X')
         .onChange(v =>
         {
-          sphere.material.uniforms.uPeriodicLengthLf.value.x = v;
+          bCellModel.material.uniforms.uPeriodicLengthLf.value.x = v;
           saveSettings();
         });
       lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthY', 1.0, 20.0, 0.1).name('Period Length Y')
         .onChange(v =>
         {
-          sphere.material.uniforms.uPeriodicLengthLf.value.y = v;
+          bCellModel.material.uniforms.uPeriodicLengthLf.value.y = v;
           saveSettings();
         });
       lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthZ', 1.0, 20.0, 0.1).name('Period Length Z')
         .onChange(v =>
         {
-          sphere.material.uniforms.uPeriodicLengthLf.value.z = v;
+          bCellModel.material.uniforms.uPeriodicLengthLf.value.z = v;
           saveSettings();
         });
       lfPeriodicFolder.close(); // Close by default unless needed open
-      // --- END: Added Periodic Settings ---
+      lfPeriodicFolder.hide();
 
       lfFolder.close();
 
       const colorFolder = gui.addFolder('Surface Colors');
-      colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { sphere.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
-      colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { sphere.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
-      colorFolder.addColor(guiParams, 'color3').name('Color 3 (Base/Trough)').onChange(v => { sphere.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
-      colorFolder.addColor(guiParams, 'troughColorMultiplier').name('Trough Multiplier').onChange(v => { sphere.material.uniforms.uTroughColorMultiplier.value.set(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b); saveSettings(); });
-      colorFolder.add(guiParams, 'troughMin', 0.0, 1.0, 0.001).name('Trough Min').onChange(v => { sphere.material.uniforms.uTroughMin.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'troughMax', 0.0, 1.0, 0.001).name('Trough Max').onChange(v => { sphere.material.uniforms.uTroughMax.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.01).name('Trough Gamma').onChange(v => { sphere.material.uniforms.uTroughGamma.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.001).name('Color Noise Scale').onChange(v => { sphere.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 10.0, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
+      colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { bCellModel.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { bCellModel.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color3').name('Color 3 (Base/Trough)').onChange(v => { bCellModel.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'troughColorMultiplier').name('Trough Multiplier').onChange(v => { bCellModel.material.uniforms.uTroughColorMultiplier.value.set(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b); saveSettings(); });
+      colorFolder.add(guiParams, 'troughMin', -10.0, 1.0, 0.0001).name('Trough Min').onChange(v => { bCellModel.material.uniforms.uTroughMin.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughMax', 0.0, 10.0, 0.0001).name('Trough Max').onChange(v => { bCellModel.material.uniforms.uTroughMax.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.0001).name('Trough Gamma').onChange(v => { bCellModel.material.uniforms.uTroughGamma.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.0001).name('Color Noise Scale').onChange(v => { bCellModel.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseGamma', 0.0001, 2.0, 0.0001).name('Color Noise Gamma').onChange(v => { bCellModel.material.uniforms.uColorNoiseGamma.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 10.0, 0.0001).name('Color Noise Evo Speed').onChange(v => { bCellModel.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
       colorFolder.close(); // Close Color folder by default
-      colorFolder.add(guiParams, 'colorNoiseAnimationAmount', 0.0, 1.0, 0.001).name('Color Animation Amount').onChange(v =>
+      colorFolder.add(guiParams, 'colorNoiseAnimationAmount', 0.0, 1.0, 0.0001).name('Color Animation Amount').onChange(v =>
       {
-        sphere.material.uniforms.uColorNoiseAnimationAmount.value = v; saveSettings();
+        bCellModel.material.uniforms.uColorNoiseAnimationAmount.value = v; saveSettings();
       });
 
+      const sssFolder = gui.addFolder('SSS');
+      sssFolder.add(guiParams, 'SSSEnable').name('Enable SSS').onChange(v => { bCellModel.material.uniforms.uSSSEnable.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSIntensity', 0.0, 1.0, 0.00001).name('SSS Intensity').onChange(v => { bCellModel.material.uniforms.uSSSIntensity.value = v; saveSettings(); });
+      sssFolder.addColor(guiParams, 'SSSColor').name('SSS Color').onChange(v => { bCellModel.material.uniforms.uSSSColor.value.setRGB(guiParams.SSSColor.r, guiParams.SSSColor.g, guiParams.SSSColor.b); saveSettings(); });
+      sssFolder.add(guiParams, 'SSSSurfaceColorContribution', 0.0, 1.0, 0.001).name('SSS Surface Color').onChange(v => { bCellModel.material.uniforms.uSSSSurfaceColorContribution.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSThicknessPower', 0.1, 20.0, 0.001).name('SSS Thickness Power').onChange(v => { bCellModel.material.uniforms.uSSSThicknessPower.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSDistortion', 0.0, 20.0, 0.001).name('SSS Distortion').onChange(v => { bCellModel.material.uniforms.uSSSDistortion.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSAmbient', 0.0, 40.0, 0.001).name('SSS Ambient').onChange(v => { bCellModel.material.uniforms.uSSSAmbient.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSAttenuation', 0.0, 20.0, 0.001).name('SSS Attenuation').onChange(v => { bCellModel.material.uniforms.uSSSAttenuation.value = v; saveSettings(); });
+
       const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
-      hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { sphere.material.uniforms.uHfEnable.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.001).name('HF Master Scale').onChange(v => { sphere.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.001).name('HF Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfOctaves', 1, 8, 1).name('HF Octaves').onChange(v => { sphere.material.uniforms.uHfOctaves.value = Math.floor(v); saveSettings(); });
-      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.01).name('HF Lacunarity').onChange(v => { sphere.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.01).name('HF Persistence').onChange(v => { sphere.material.uniforms.uHfPersistence.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.001).name('HF Normal Strength').onChange(v => { sphere.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { bCellModel.material.uniforms.uHfEnable.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.001).name('HF Master Scale').onChange(v => { bCellModel.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.001).name('HF Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfOctaves', 1, 8, 1).name('HF Octaves').onChange(v => { bCellModel.material.uniforms.uHfOctaves.value = Math.floor(v); saveSettings(); });
+      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.01).name('HF Lacunarity').onChange(v => { bCellModel.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.01).name('HF Persistence').onChange(v => { bCellModel.material.uniforms.uHfPersistence.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.001).name('HF Normal Strength').onChange(v => { bCellModel.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
 
       const hfFlowFolder = hfFolder.addFolder('HF Flow Field');
-      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { sphere.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
-      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 10.0, 0.01).name('HF Flow Strength').onChange(v => { sphere.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
-      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { sphere.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 1.0, 0.01).name('HF Flow Strength').onChange(v => { bCellModel.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
       hfFlowFolder.close(); // Close HF flow by default
       hfFolder.close(); // Close HF folder by default
+      hfFolder.hide();
 
       const lightingFolder = gui.addFolder('Lighting System');
       lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.01).name('Ambient Intensity')
-        .onChange(v => { if (sphere) sphere.material.uniforms.uAmbientIntensity.value = v; saveSettings(); });
+        .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uAmbientIntensity.value = v; saveSettings(); });
 
       lightingFolder.add(guiParams, 'numLights', 0, MAX_LIGHTS_IN_SHADER, 1).name('Active Lights Count')
         .onChange(v =>
         {
-          if (sphere)
+          if (bCellModel)
           {
             const newNumActive = Math.min(v, MAX_LIGHTS_IN_SHADER);
-            sphere.material.uniforms.uNumLights.value = newNumActive;
+            bCellModel.material.uniforms.uNumLights.value = newNumActive;
             // Ensure the enabled state in the shader matches the gui state
             // for the newly active/inactive lights
             for (let k = 0; k < MAX_LIGHTS_IN_SHADER; k++)
             {
               if (k < newNumActive)
               {
-                sphere.material.uniforms.uLights.value[k].enabled = guiParams.lights[k].enabled;
+                bCellModel.material.uniforms.uLights.value[k].enabled = guiParams.lights[k].enabled;
               } else
               {
-                sphere.material.uniforms.uLights.value[k].enabled = false; // Force disable in shader if beyond count
+                bCellModel.material.uniforms.uLights.value[k].enabled = false; // Force disable in shader if beyond count
               }
             }
             // Optionally: Visually enable/disable the folders in the GUI (more complex)
@@ -1290,12 +1530,12 @@
       {
         const lightGuiParams = guiParams.lights[i];
         // Ensure light uniform exists before accessing (should always be true after init)
-        if (!sphere || !sphere.material || !sphere.material.uniforms.uLights || !sphere.material.uniforms.uLights.value[i])
+        if (!bCellModel || !bCellModel.material || !bCellModel.material.uniforms.uLights || !bCellModel.material.uniforms.uLights.value[i])
         {
           console.error(`Cannot setup GUI for light ${i}: Uniforms not ready.`);
           continue; // Skip this light if something is wrong
         }
-        const lightUniformRef = sphere.material.uniforms.uLights.value[i];
+        const lightUniformRef = bCellModel.material.uniforms.uLights.value[i];
         const lightFolder = lightingFolder.addFolder(lightGuiParams.name || `Light ${i + 1}`);
 
         lightFolder.add(lightGuiParams, 'enabled').name('Enabled (if active)')
@@ -1303,7 +1543,7 @@
           {
             lightGuiParams.enabled = v; // Update the guiParams state
             // Only update the shader uniform if this light is within the active count
-            if (i < sphere.material.uniforms.uNumLights.value)
+            if (i < bCellModel.material.uniforms.uNumLights.value)
             {
               lightUniformRef.enabled = v;
             }
@@ -1319,11 +1559,13 @@
           .onChange(v => { lightUniformRef.intensity = v; saveSettings(); });
 
         const contributionsFolder = lightFolder.addFolder('Contributions & Shininess');
-        contributionsFolder.add(lightGuiParams, 'diffuseContribution', 0.0, 1.0, 0.01).name('Diffuse')
+        contributionsFolder.add(lightGuiParams, 'diffuseContribution', 0.0, 1.0, 0.0001).name('Diffuse')
           .onChange(v => { lightUniformRef.diffuseContribution = v; saveSettings(); });
-        contributionsFolder.add(lightGuiParams, 'specularContribution', 0.0, 1.0, 0.01).name('Specular')
+        contributionsFolder.add(lightGuiParams, 'specularContribution', 0.0, 1.0, 0.0001).name('Specular')
           .onChange(v => { lightUniformRef.specularContribution = v; saveSettings(); });
-        contributionsFolder.add(lightGuiParams, 'specularShininess', 1.0, 512.0, 1.0).name('Shininess (Base)') // << UPDATED NAME
+        contributionsFolder.add(lightGuiParams, 'sssContribution', 0.0, 4.0, 0.0001).name('SSS')
+          .onChange(v => { lightUniformRef.sssContribution = v; saveSettings(); });
+        contributionsFolder.add(lightGuiParams, 'specularShininess', 1.0, 512.0, 1.0).name('Shininess (Base)')
           .onChange(v => { lightUniformRef.specularShininess = v; saveSettings(); });
         contributionsFolder.close(); // Close by default
 
@@ -1369,20 +1611,22 @@
     function onWindowResize()
     {
       const isMobile = window.innerWidth < 768;
-      
+
       // Update camera aspect ratio
       camera.aspect = window.innerWidth / window.innerHeight;
-      
+
       // Adjust field of view for mobile if needed
-      if (isMobile && camera.fov < 65) {
+      if (isMobile && camera.fov < 65)
+      {
         camera.fov = 70;
-      } else if (!isMobile && camera.fov > 65) {
+      } else if (!isMobile && camera.fov > 65)
+      {
         camera.fov = 60;
       }
-      
+
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      
+
       // Force a redraw
       renderer.render(scene, camera);
     }
@@ -1439,14 +1683,13 @@
       }
 
       // Update the shader time uniform
-      if (sphere && sphere.material && sphere.material.uniforms.uTime)
+      if (bCellModel && bCellModel.material && bCellModel.material.uniforms.uTime)
       {
-        const timeValue = elapsedTimeSeconds *
+        let timeValue = elapsedTimeSeconds *
           (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
-
         // Continue normal animation even during transitions
         // This prevents the "snap then delay" effect by maintaining consistent animation
-        sphere.material.uniforms.uTime.value = timeValue;
+        bCellModel.material.uniforms.uTime.value = timeValue;
       }
 
       controls.update();
@@ -1570,52 +1813,64 @@
     }
 
     // Function to set up the preset button listeners
-    function setupPresetButtons() {
+    function setupPresetButtons()
+    {
       const presetButtons = document.querySelectorAll('.preset-button');
-      
+
       // Function to update active button state
-      function updateActiveButton(activePreset) {
-        presetButtons.forEach(button => {
-          if (button.dataset.preset === activePreset) {
+      function updateActiveButton(activePreset)
+      {
+        presetButtons.forEach(button =>
+        {
+          if (button.dataset.preset === activePreset)
+          {
             button.classList.add('active');
-          } else {
+          } else
+          {
             button.classList.remove('active');
           }
         });
       }
-      
+
       // Add click handlers to all preset buttons
-      presetButtons.forEach(button => {
-        button.addEventListener('click', function() {
+      presetButtons.forEach(button =>
+      {
+        button.addEventListener('click', function ()
+        {
           const presetName = this.dataset.preset;
           console.log(`Preset button clicked: ${presetName}`);
-          
+
           // Apply the selected preset
-          if (presetName && (defaultPresets[presetName] || userPresets[presetName])) {
+          if (presetName && (defaultPresets[presetName] || userPresets[presetName]))
+          {
             applyPreset(presetName);
-            
+
             // Update button states
             updateActiveButton(presetName);
-            
+
             // Update current preset name in state
             presetState.currentPreset = presetName;
-            
+
             // Update GUI if it exists
-            if (gui) {
+            if (gui)
+            {
               // Update all controllers to reflect current state
-              gui.controllersRecursive().forEach(controller => {
+              gui.controllersRecursive().forEach(controller =>
+              {
                 if (controller.updateDisplay) controller.updateDisplay();
               });
             }
-          } else {
+          } else
+          {
             console.error(`Preset not found: ${presetName}`);
           }
         });
       });
-      
+
       // Set the initial active button based on current preset
       // This will be called after a short delay to ensure presets are loaded
-      setTimeout(() => {
+      setTimeout(() =>
+      {
         updateActiveButton(currentPresetName);
       }, 1500);
     }
@@ -1629,10 +1884,10 @@
         loadUserPresets();
         loadSettings();
         await loadShadersAndTextures(); // << MODIFIED FUNCTION CALL
-        
+
         // Setup the preset buttons after everything is loaded
         setupPresetButtons();
-        
+
         setTimeout(forceApplyIdlePreset, 1000); // Force apply idle preset after 1 second
       } catch (error)
       {
