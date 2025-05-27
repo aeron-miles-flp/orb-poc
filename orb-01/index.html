@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>ChatBot</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #222;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.75);
+      color: white;
+      border-radius: 8px;
+      z-index: 100;
+      font-size: 12px;
+      max-width: 300px;
+    }
+
+    /* Preset Buttons Styling */
+    #preset-buttons {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 1000;
+    }
+
+    .preset-button {
+      padding: 12px 24px;
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 30px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      min-width: 120px;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+
+    .preset-button.active {
+      background-color: rgba(84, 84, 84, 0.9);
+      border-color: rgb(168, 168, 168);
+    }
+
+    /* Media query for mobile devices */
+    @media (max-width: 768px) {
+      #preset-buttons {
+        flex-wrap: wrap;
+        justify-content: center;
+        bottom: 10px;
+        width: 90%;
+      }
+      
+      .preset-button {
+        padding: 10px 16px;
+        font-size: 14px;
+        min-width: 100px;
+      }
+    }
+
+    .lil-gui {
+      top: 10px;
+      right: 10px;
+      max-height: calc(100vh - 20px);
+      /* Ensure GUI fits on screen */
+      overflow-y: auto;
+      border-radius: 8px;
+      --widget-padding: 5px;
+      /* Adjust padding for a slightly more compact look */
+      --folder-indent: 10px;
+      --font-size: 11px;
+    }
+
+    .lil-gui.root>.children>.lil-gui>.title {
+      font-size: 13px;
+      /* Slightly larger for main folder titles */
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div id="info">Drag to rotate. Scroll to zoom.</div>
+  
+  <div id="preset-buttons">
+    <button class="preset-button" data-preset="idle">Idle</button>
+    <button class="preset-button" data-preset="listening">Listening</button>
+    <button class="preset-button" data-preset="thinking">Thinking</button>
+    <button class="preset-button" data-preset="speaking">Speaking</button>
+  </div>
+  
+  <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.176.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/",
+                "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.20.0/dist/lil-gui.esm.js"
+            }
+        }
+    </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    let scene, camera, renderer, sphere, controls;
+    let animationStartTime;
+    let gui;
+    const SETTINGS_KEY = 'flowNoiseShaderSettings_v4';
+    const PRESETS_KEY = 'flowNoiseShaderPresets';
+
+    let currentPresetName = 'Default'; // Track the current preset name
+    let userPresets = {}; // Store user presets
+    let defaultPresets = {}; // Store default presets
+
+    let fetchedDefaultSettings = {};
+    let guiParams = {};
+
+    // Global preset state for UI and transitions
+    let presetState = {
+      currentPreset: currentPresetName,
+      newPresetName: 'MyPreset',
+      deleteConfirm: false,
+      transitionTime: 1.0 // Default transition time in seconds
+    };
+
+    // Variables for transition blending
+    let isTransitioning = false;
+    let transitionStartTime = 0;
+    let transitionDuration = 0;
+    let startSettings = null;
+    let targetSettings = null;
+
+    const MAX_LIGHTS_IN_SHADER = 4;
+
+    let mainVertexShader, mainFragmentShader;
+    let shininessTexture; // << NEW VARIABLE FOR TEXTURE
+
+    async function fetchExternalDefaultSettings()
+    {
+      try
+      {
+        const response = await fetch('assets/default-settings.json');
+        if (!response.ok)
+        {
+          throw new Error(`HTTP error! status: ${response.status} while fetching default-settings.json`);
+        }
+        fetchedDefaultSettings = await response.json();
+        console.log("Default settings loaded from default-settings.json");
+      } catch (e)
+      {
+        console.error("CRITICAL ERROR fetching default-settings.json. Application might not work as expected.", e);
+        document.getElementById('info').innerHTML = `Error loading default settings from JSON: ${e.message}. Please check console. App may be unstable. Using minimal fallbacks.`;
+      }
+    }
+
+    async function fetchDefaultPresets()
+    {
+      try
+      {
+        const response = await fetch('assets/default-presets.json');
+        if (!response.ok)
+        {
+          throw new Error(`HTTP error! status: ${response.status} while fetching default-presets.json`);
+        }
+        defaultPresets = await response.json();
+        console.log("Default presets loaded from default-presets.json:", defaultPresets);
+
+        // Ensure the 'idle' preset exists
+        if (!defaultPresets.idle)
+        {
+          console.warn("Idle preset not found in default presets, might cause errors if referenced");
+        }
+      }
+      catch (e)
+      {
+        console.warn("Could not load default-presets.json, using empty defaults", e);
+        defaultPresets = {};
+      }
+    }
+
+    function loadUserPresets()
+    {
+      try
+      {
+        const savedPresets = localStorage.getItem(PRESETS_KEY);
+        if (savedPresets)
+        {
+          userPresets = JSON.parse(savedPresets);
+          console.log("User presets loaded from localStorage");
+        }
+        else
+        {
+          console.log("No user presets found in localStorage");
+          userPresets = {};
+        }
+      }
+      catch (e)
+      {
+        console.error("Error loading presets from localStorage", e);
+        userPresets = {};
+      }
+    }
+
+    function saveUserPresets()
+    {
+      try
+      {
+        localStorage.setItem(PRESETS_KEY, JSON.stringify(userPresets));
+        console.log("User presets saved to localStorage");
+      }
+      catch (e)
+      {
+        console.error("Error saving presets to localStorage", e);
+      }
+    }
+
+    function saveCurrentAsPreset(presetName)
+    {
+      if (!presetName || presetName.trim() === '')
+      {
+        console.error("Cannot save preset without a name");
+        return false;
+      }
+
+      // Create a deep copy of the current settings
+      const presetSettings = JSON.parse(JSON.stringify(guiParams));
+
+      // Add the transition time from the GUI
+      presetSettings.transitionTime = presetState.transitionTime;
+
+      // Store in user presets
+      userPresets[presetName] = presetSettings;
+
+      // Update current preset name
+      currentPresetName = presetName;
+
+      // Save to localStorage
+      saveUserPresets();
+
+      console.log(`Saved current settings as preset: ${presetName}`);
+      return true;
+    }
+
+    function applyPreset(presetName)
+    {
+      let presetSettings;
+      console.log("Applying preset:", presetName);
+
+      // Get current time for transition
+      const currentTime = performance.now();
+      const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
+
+      // Check user presets first
+      if (userPresets[presetName])
+      {
+        console.log(`Found preset ${presetName} in user presets`);
+        presetSettings = userPresets[presetName];
+      }
+      // Then check default presets
+      else if (defaultPresets[presetName])
+      {
+        console.log(`Found preset ${presetName} in default presets`);
+        presetSettings = defaultPresets[presetName];
+      }
+
+      if (!presetSettings)
+      {
+        console.error(`Preset not found: ${presetName}`);
+        return false;
+      }
+
+      // Create a deep copy of current settings
+      const currentSettings = JSON.parse(JSON.stringify(guiParams));
+
+      // Get transition time from preset or use default
+      let transitionTime = presetSettings.transitionTime;
+      if (transitionTime === undefined || transitionTime === null)
+      {
+        // If not specified in preset, use the value from GUI
+        transitionTime = presetState.transitionTime;
+      }
+
+      // If transition time is 0 or we don't have any shaders loaded yet, 
+      // apply immediately without transition
+      if (transitionTime <= 0 || !sphere || !sphere.material || !sphere.material.uniforms)
+      {
+        // Apply preset immediately without transition
+        applyPresetSettingsImmediately(presetSettings);
+        return true;
+      }
+
+      // Prepare settings for a smooth transition
+      const preparedStartSettings = JSON.parse(JSON.stringify(currentSettings)); // Deep clone
+      const preparedTargetSettings = JSON.parse(JSON.stringify(presetSettings)); // Deep clone
+
+      // Special handling for animation parameters to prevent extreme values during transitions
+      // This ensures we have consistent animation throughout the transition
+
+      // If either start or target has zero animation, smoothly transition to avoid snapping
+      if (preparedStartSettings.vertexAnimationAmount === 0 &&
+        preparedTargetSettings.vertexAnimationAmount !== 0)
+      {
+        // Going from static to animated - use a small non-zero value to start
+        preparedStartSettings.vertexAnimationAmount = preparedTargetSettings.vertexAnimationAmount * 0.01;
+      } else if (preparedStartSettings.vertexAnimationAmount !== 0 &&
+        preparedTargetSettings.vertexAnimationAmount === 0)
+      {
+        // Going from animated to static - use a small non-zero value to end
+        preparedTargetSettings.vertexAnimationAmount = preparedStartSettings.vertexAnimationAmount * 0.01;
+      }
+
+      // Similar approach for animation speed
+      if (preparedStartSettings.vertexAnimationSpeed === 0 &&
+        preparedTargetSettings.vertexAnimationSpeed !== 0)
+      {
+        preparedStartSettings.vertexAnimationSpeed = preparedTargetSettings.vertexAnimationSpeed * 0.01;
+      } else if (preparedStartSettings.vertexAnimationSpeed !== 0 &&
+        preparedTargetSettings.vertexAnimationSpeed === 0)
+      {
+        preparedTargetSettings.vertexAnimationSpeed = preparedStartSettings.vertexAnimationSpeed * 0.01;
+      }
+
+      // Set up the transition
+      isTransitioning = true;
+      transitionStartTime = elapsedTimeSeconds; // Use the same time base as animation loop
+      transitionDuration = transitionTime;
+      startSettings = preparedStartSettings;
+      targetSettings = preparedTargetSettings;
+
+      // Update current preset name
+      currentPresetName = presetName;
+
+      console.log(`Starting transition to preset: ${presetName} over ${transitionTime} seconds`);
+      return true;
+    }
+
+    // Helper function for immediate preset application without blending
+    function applyPresetSettingsImmediately(presetSettings)
+    {
+      // Apply preset, but preserve any properties not included in the preset
+      for (const key in presetSettings)
+      {
+        // Skip the transitionTime property as it's a meta property
+        if (key === 'transitionTime') continue;
+
+        // Handle nested objects (e.g., colors, camera position)
+        if (typeof presetSettings[key] === 'object' && !Array.isArray(presetSettings[key]))
+        {
+          if (!guiParams[key]) guiParams[key] = {};
+          Object.assign(guiParams[key], presetSettings[key]);
+        }
+        // Handle arrays (e.g., lights)
+        else if (Array.isArray(presetSettings[key]))
+        {
+          if (key === 'lights')
+          {
+            // Special handling for lights array with nested objects
+            if (!Array.isArray(guiParams[key]))
+            {
+              guiParams[key] = [];
+            }
+
+            // Ensure we don't exceed the maximum lights
+            const numLights = Math.min(presetSettings[key].length, MAX_LIGHTS_IN_SHADER);
+
+            // Process each light in the preset
+            for (let i = 0; i < numLights; i++)
+            {
+              if (!guiParams[key][i])
+              {
+                guiParams[key][i] = {};
+              }
+
+              // Copy all properties from preset light to guiParams light
+              for (const lightProp in presetSettings[key][i])
+              {
+                if (typeof presetSettings[key][i][lightProp] === 'object' &&
+                  !Array.isArray(presetSettings[key][i][lightProp]))
+                {
+                  // Handle nested objects inside each light (like position, color)
+                  if (!guiParams[key][i][lightProp])
+                  {
+                    guiParams[key][i][lightProp] = {};
+                  }
+                  Object.assign(guiParams[key][i][lightProp], presetSettings[key][i][lightProp]);
+                } else
+                {
+                  // Handle primitive values
+                  guiParams[key][i][lightProp] = presetSettings[key][i][lightProp];
+                }
+              }
+            }
+          } else
+          {
+            // For other arrays, deep copy
+            guiParams[key] = JSON.parse(JSON.stringify(presetSettings[key]));
+          }
+        }
+        // Handle primitive values
+        else
+        {
+          guiParams[key] = presetSettings[key];
+        }
+      }
+
+      // Update all material uniforms
+      if (sphere && sphere.material && sphere.material.uniforms)
+      {
+        updateAllMaterialUniforms();
+      }
+
+      // Update GUI controllers
+      if (gui)
+      {
+        gui.controllersRecursive().forEach(controller =>
+        {
+          if (controller.updateDisplay) controller.updateDisplay();
+        });
+      }
+
+      // Save settings to localStorage
+      saveSettings();
+
+      console.log(`Applied preset immediately`);
+    }
+
+    function deletePreset(presetName)
+    {
+      if (!userPresets[presetName])
+      {
+        console.error(`User preset not found: ${presetName}`);
+        return false;
+      }
+
+      // Delete the preset
+      delete userPresets[presetName];
+
+      // If this was the current preset, reset to Default
+      if (currentPresetName === presetName)
+      {
+        currentPresetName = 'Default';
+      }
+
+      // Save updated presets to localStorage
+      saveUserPresets();
+
+      console.log(`Deleted preset: ${presetName}`);
+      return true;
+    }
+
+    function updateAllMaterialUniforms()
+    {
+      // Update all the uniforms based on current guiParams
+      if (!sphere || !sphere.material || !sphere.material.uniforms) return;
+
+      const uniforms = sphere.material.uniforms;
+
+      // Update primitive uniforms with safety checks for animation parameters
+      // For animation parameters, ensure they are valid numbers to prevent NaN issues
+      uniforms.uVertexDisplacementScale.value = typeof guiParams.vertexDisplacementScale === 'number' ?
+        guiParams.vertexDisplacementScale : 0;
+
+      // Animation parameters need special care as they interact with time
+      uniforms.uVertexAnimationAmount.value = typeof guiParams.vertexAnimationAmount === 'number' ?
+        guiParams.vertexAnimationAmount : 0;
+
+      uniforms.uVertexAnimationSpeed.value = typeof guiParams.vertexAnimationSpeed === 'number' ?
+        guiParams.vertexAnimationSpeed : 0;
+
+      // Other noise parameters
+      uniforms.uLfMasterScale.value = guiParams.lfMasterScale;
+      uniforms.uLfPatternTimeScale.value = guiParams.lfPatternTimeScale;
+      uniforms.uLfOctaves.value = Math.floor(guiParams.lfOctaves);
+      uniforms.uLfLacunarity.value = guiParams.lfLacunarity;
+      uniforms.uLfPersistence.value = guiParams.lfPersistence;
+      uniforms.uLfNoiseContrastLower.value = guiParams.lfNoiseContrastLower;
+      uniforms.uLfNoiseContrastUpper.value = guiParams.lfNoiseContrastUpper;
+      uniforms.uLfNormalStrength.value = guiParams.lfNormalStrength;
+      uniforms.uLfFlowScale.value = guiParams.lfFlowScale;
+      uniforms.uLfFlowStrength.value = guiParams.lfFlowStrength;
+      uniforms.uLfFlowTimeScale.value = guiParams.lfFlowTimeScale;
+      uniforms.uEnablePeriodicLf.value = guiParams.lfEnablePeriodic;
+
+      if (uniforms.uPeriodicLengthLf && uniforms.uPeriodicLengthLf.value)
+      {
+        uniforms.uPeriodicLengthLf.value.set(
+          guiParams.lfPeriodicLengthX,
+          guiParams.lfPeriodicLengthY,
+          guiParams.lfPeriodicLengthZ
+        );
+      }
+
+      // High-frequency noise settings
+      uniforms.uHfEnable.value = guiParams.hfEnable;
+      uniforms.uHfMasterScale.value = guiParams.hfMasterScale;
+      uniforms.uHfPatternTimeScale.value = guiParams.hfPatternTimeScale;
+      uniforms.uHfOctaves.value = Math.floor(guiParams.hfOctaves);
+      uniforms.uHfLacunarity.value = guiParams.hfLacunarity;
+      uniforms.uHfPersistence.value = guiParams.hfPersistence;
+      uniforms.uHfNormalStrength.value = guiParams.hfNormalStrength;
+      uniforms.uHfFlowScale.value = guiParams.hfFlowScale;
+      uniforms.uHfFlowStrength.value = guiParams.hfFlowStrength;
+      uniforms.uHfFlowTimeScale.value = guiParams.hfFlowTimeScale;
+
+      // Color settings
+      if (uniforms.uColor1 && uniforms.uColor1.value)
+      {
+        uniforms.uColor1.value.setRGB(
+          guiParams.color1.r,
+          guiParams.color1.g,
+          guiParams.color1.b
+        );
+      }
+
+      if (uniforms.uColor2 && uniforms.uColor2.value)
+      {
+        uniforms.uColor2.value.setRGB(
+          guiParams.color2.r,
+          guiParams.color2.g,
+          guiParams.color2.b
+        );
+      }
+
+      if (uniforms.uColor3 && uniforms.uColor3.value)
+      {
+        uniforms.uColor3.value.setRGB(
+          guiParams.color3.r,
+          guiParams.color3.g,
+          guiParams.color3.b
+        );
+      }
+
+      if (uniforms.uTroughColorMultiplier && uniforms.uTroughColorMultiplier.value)
+      {
+        uniforms.uTroughColorMultiplier.value.set(
+          guiParams.troughColorMultiplier.r,
+          guiParams.troughColorMultiplier.g,
+          guiParams.troughColorMultiplier.b
+        );
+      }
+
+      uniforms.uTroughMin.value = guiParams.troughMin;
+      uniforms.uTroughMax.value = guiParams.troughMax;
+      uniforms.uTroughGamma.value = guiParams.troughGamma;
+      uniforms.uColorNoiseScale.value = guiParams.colorNoiseScale;
+      uniforms.uColorNoiseTimeScale.value = guiParams.colorNoiseTimeScale;
+      uniforms.uColorNoiseAnimationAmount.value = guiParams.colorNoiseAnimationAmount;
+
+      // Lighting settings
+      uniforms.uAmbientIntensity.value = guiParams.ambientIntensity;
+      uniforms.uNumLights.value = Math.min(
+        guiParams.numLights,
+        guiParams.lights.length,
+        MAX_LIGHTS_IN_SHADER
+      );
+
+      // Update all light uniforms
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        if (i < uniforms.uNumLights.value && guiParams.lights[i])
+        {
+          const lightData = guiParams.lights[i];
+          const lightUniform = uniforms.uLights.value[i];
+
+          lightUniform.enabled = lightData.enabled !== undefined ? lightData.enabled : false;
+          lightUniform.color.setRGB(
+            lightData.color?.r ?? 0,
+            lightData.color?.g ?? 0,
+            lightData.color?.b ?? 0
+          );
+          lightUniform.intensity = lightData.intensity !== undefined ? lightData.intensity : 0;
+          lightUniform.diffuseContribution = lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0;
+          lightUniform.specularContribution = lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0;
+          lightUniform.specularShininess = lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0;
+          lightUniform.position.set(
+            lightData.position?.x ?? 0,
+            lightData.position?.y ?? 0,
+            lightData.position?.z ?? 5.0
+          );
+          lightUniform.diffuseHfNormalAmount = lightData.diffuseHfNormalAmount !== undefined ? lightData.diffuseHfNormalAmount : 1.0;
+          lightUniform.specularHfNormalAmount = lightData.specularHfNormalAmount !== undefined ? lightData.specularHfNormalAmount : 1.0;
+        } else if (uniforms.uLights.value[i])
+        {
+          uniforms.uLights.value[i].enabled = false;
+        }
+      }
+
+      // Update orbit controls
+      if (controls)
+      {
+        controls.autoRotate = guiParams.autoRotate !== undefined ? guiParams.autoRotate : true;
+        controls.autoRotateSpeed = guiParams.autoRotateSpeed !== undefined ? guiParams.autoRotateSpeed : 0.2;
+      }
+    }
+
+    function loadSettings()
+    {
+      if (Object.keys(fetchedDefaultSettings).length === 0)
+      {
+        console.warn("Fetched default settings are empty at the start of loadSettings.");
+      }
+
+      const baseDefaults = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+      const savedSettingsFromStorage = localStorage.getItem(SETTINGS_KEY);
+
+      if (savedSettingsFromStorage)
+      {
+        try
+        {
+          const parsedLocalStorageSettings = JSON.parse(savedSettingsFromStorage);
+          guiParams = { ...baseDefaults, ...parsedLocalStorageSettings };
+          const nestedObjectKeys = ['color1', 'color2', 'color3', 'troughColorMultiplier', 'cameraPosition'];
+          for (const key of nestedObjectKeys)
+          {
+            if (baseDefaults[key] && typeof baseDefaults[key] === 'object')
+            {
+              guiParams[key] = { ...baseDefaults[key], ...(parsedLocalStorageSettings[key] || {}) };
+            }
+          }
+          if (Array.isArray(parsedLocalStorageSettings.lights))
+          {
+            guiParams.lights = JSON.parse(JSON.stringify(parsedLocalStorageSettings.lights));
+          } else if (!Array.isArray(guiParams.lights))
+          {
+            guiParams.lights = Array.isArray(baseDefaults.lights) ? JSON.parse(JSON.stringify(baseDefaults.lights)) : [];
+          }
+          console.log("Settings loaded from localStorage and merged with JSON defaults.");
+        } catch (e)
+        {
+          console.error("Error parsing saved settings from localStorage. Using JSON defaults.", e);
+          guiParams = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+        }
+      } else
+      {
+        console.log("No saved settings found in localStorage. Using JSON defaults.");
+        guiParams = JSON.parse(JSON.stringify(fetchedDefaultSettings));
+      }
+
+      if (typeof guiParams.numLights !== 'number' || guiParams.numLights < 0 || guiParams.numLights > MAX_LIGHTS_IN_SHADER)
+      {
+        console.warn(`guiParams.numLights ('${guiParams.numLights}') is invalid. Resetting based on defaults or to 0.`);
+        if (typeof baseDefaults.numLights === 'number' && baseDefaults.numLights >= 0 && baseDefaults.numLights <= MAX_LIGHTS_IN_SHADER)
+        {
+          guiParams.numLights = baseDefaults.numLights;
+        } else
+        {
+          guiParams.numLights = 0;
+        }
+      }
+
+      if (!Array.isArray(guiParams.lights))
+      {
+        console.warn("guiParams.lights is not an array. Initializing as empty array.");
+        guiParams.lights = [];
+      }
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        if (!guiParams.lights[i] || typeof guiParams.lights[i] !== 'object')
+        {
+          const defaultLightConfig = (baseDefaults.lights && baseDefaults.lights[i]) ?
+            JSON.parse(JSON.stringify(baseDefaults.lights[i])) :
+            {
+              name: `Light ${i + 1}`, enabled: false, color: { r: 0.5, g: 0.5, b: 0.5 }, intensity: 0.0,
+              diffuseContribution: 0.0, specularContribution: 0.0, specularShininess: 32,
+              position: { x: 0, y: 0, z: (i + 1) * 2.0 },
+              diffuseHfNormalAmount: 1.0, specularHfNormalAmount: 1.0
+            };
+          guiParams.lights[i] = defaultLightConfig;
+          if (!guiParams.lights[i].name) guiParams.lights[i].name = `Light ${i + 1}`;
+        } else if (!guiParams.lights[i].name)
+        {
+          guiParams.lights[i].name = `Light ${i + 1} (User)`;
+        }
+      }
+      if (guiParams.lights.length > MAX_LIGHTS_IN_SHADER)
+      {
+        guiParams.lights.length = MAX_LIGHTS_IN_SHADER;
+      }
+    }
+
+    function saveSettings()
+    {
+      try
+      {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(guiParams));
+        console.log("Settings saved to localStorage.");
+      } catch (e)
+      {
+        console.error("Error saving settings to localStorage.", e);
+      }
+    }
+
+    /**
+     * Helper function to blend between values based on a progress ratio
+     * @param {*} start Starting value (number, object, or array)
+     * @param {*} end Target value (number, object, or array)
+     * @param {number} progress Transition progress (0.0 to 1.0)
+     * @returns Interpolated value
+     */
+    function blendValues(start, end, progress)
+    {
+      // If either is null or undefined, return the other one
+      if (start === null || start === undefined) return end;
+      if (end === null || end === undefined) return start;
+
+      // Handle arrays (like for light data)
+      if (Array.isArray(start) && Array.isArray(end))
+      {
+        // Create a result array with the appropriate length
+        const maxLength = Math.max(start.length, end.length);
+        const result = new Array(maxLength);
+
+        for (let i = 0; i < maxLength; i++)
+        {
+          if (i < start.length && i < end.length)
+          {
+            // Both arrays have this index, blend the values
+            result[i] = blendValues(start[i], end[i], progress);
+          } else if (i < start.length)
+          {
+            // Only in start array - use start value (will fade out based on progress)
+            if (typeof start[i] === 'number')
+            {
+              // Linear fade out for numbers
+              result[i] = start[i] * (1 - progress);
+            } else
+            {
+              // For objects or other types, keep the start value
+              result[i] = start[i];
+            }
+          } else
+          {
+            // Only in end array - use end value (will fade in based on progress)
+            if (typeof end[i] === 'number')
+            {
+              // Linear fade in for numbers
+              result[i] = end[i] * progress;
+            } else
+            {
+              // For objects or other types, keep the end value
+              result[i] = end[i];
+            }
+          }
+        }
+        return result;
+      }
+
+      // Handle objects (like for colors or positions)
+      if (typeof start === 'object' && typeof end === 'object')
+      {
+        const result = {};
+        // Combine all keys from both objects
+        const allKeys = [...new Set([...Object.keys(start), ...Object.keys(end)])];
+
+        for (const key of allKeys)
+        {
+          // Special handling for animation parameters that need careful blending
+          if ((key === 'vertexAnimationAmount' || key === 'vertexAnimationSpeed') &&
+            typeof start[key] === 'number' && typeof end[key] === 'number')
+          {
+
+            // For vertexAnimationAmount and vertexAnimationSpeed, we need to ensure smooth transitions
+            // Direct linear interpolation without any snapping
+            result[key] = start[key] + (end[key] - start[key]) * progress;
+            continue;
+          }
+
+          // Handle vertex displacement with careful blending
+          if (key === 'vertexDisplacementScale' &&
+            typeof start[key] === 'number' && typeof end[key] === 'number')
+          {
+
+            // Smoothly interpolate displacement scale
+            result[key] = start[key] + (end[key] - start[key]) * progress;
+            continue;
+          }
+
+          // Normal blending for other properties
+          if (key in start && key in end)
+          {
+            // Both objects have this key, blend the values
+            result[key] = blendValues(start[key], end[key], progress);
+          } else if (key in start)
+          {
+            // Only in start object - handle fade out for numbers
+            if (typeof start[key] === 'number')
+            {
+              result[key] = start[key] * (1 - progress);
+            } else
+            {
+              result[key] = start[key];
+            }
+          } else
+          {
+            // Only in end object - handle fade in for numbers
+            if (typeof end[key] === 'number')
+            {
+              result[key] = end[key] * progress;
+            } else
+            {
+              result[key] = end[key];
+            }
+          }
+        }
+        return result;
+      }
+
+      // Handling primitive values like numbers
+      if (typeof start === 'number' && typeof end === 'number')
+      {
+        // Ensure linear interpolation for numbers
+        return start + (end - start) * progress;
+      }
+
+      // For values that can't be interpolated (like strings, booleans), 
+      // switch at the halfway point
+      return progress < 0.5 ? start : end;
+    }
+
+    async function fetchShader(url)
+    {
+      const response = await fetch(url);
+      if (!response.ok)
+      {
+        throw new Error(`Failed to fetch shader: ${url} ${response.statusText}`);
+      }
+      return response.text();
+    }
+
+    // Function to load textures
+    async function loadTextures()
+    { // << NEW FUNCTION
+      const textureLoader = new THREE.TextureLoader();
+      try
+      {
+        shininessTexture = await textureLoader.loadAsync('assets/smoothness.jpg'); // << LOAD TEXTURE
+        shininessTexture.wrapS = THREE.RepeatWrapping;
+        shininessTexture.wrapT = THREE.RepeatWrapping;
+        console.log("Shininess texture loaded successfully.");
+      } catch (error)
+      {
+        console.error("Error loading shininess texture:", error);
+        document.getElementById('info').innerHTML += `<br>Error loading shininess.jpg: ${error.message}. Specular shininess might not work as intended.`;
+        // Optionally, provide a fallback plain white texture or handle the error in shader uniforms
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = 'white'; // Default to full shininess if texture fails
+        context.fillRect(0, 0, 1, 1);
+        shininessTexture = new THREE.CanvasTexture(canvas);
+
+      }
+    }
+
+
+    async function loadShadersAndTextures() // << MODIFIED FUNCTION NAME
+    {
+      try
+      {
+        await loadTextures(); // << CALL TEXTURE LOADING
+        [mainVertexShader, mainFragmentShader] = await Promise.all([
+          fetchShader('assets/main.vert.glsl'),
+          fetchShader('assets/main.frag.glsl')
+        ]);
+        initScene();
+        animateScene();
+      } catch (error)
+      {
+        console.error("Error loading shaders or textures:", error); // << MODIFIED ERROR
+        document.getElementById('info').innerHTML = `Error loading shaders/textures: ${error.message}. Please check console.`;
+        throw error;
+      }
+    }
+
+    // Modified initScene function with fixed mobile positioning
+    function initScene()
+    {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document.body.appendChild(renderer.domElement);
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(guiParams.sceneBackgroundColor || 0x202025);
+
+      // MOBILE FIX 1: Adjust field of view for mobile devices
+      const isMobile = window.innerWidth < 768;
+      const fov = isMobile ? 70 : (guiParams.cameraFov || 60); // Wider FOV for mobile
+      
+      camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
+      
+      // MOBILE FIX 2: Center camera properly and adjust distance for mobile
+      const cameraDistance = isMobile ? 4.5 : 6.0; // Closer on mobile to ensure sphere is visible
+      camera.position.set(0, 0, cameraDistance);
+      
+      // MOBILE FIX 3: Ensure camera looks at center of sphere
+      camera.lookAt(0, 0, 0);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      
+      // MOBILE FIX 4: Set proper target for orbit controls
+      controls.target.set(0, 0, 0);
+      
+      // MOBILE FIX 5: Adjust distance constraints for mobile
+      const minDist = isMobile ? 1.5 : (guiParams.cameraMinDistance || 1.0);
+      const maxDist = isMobile ? 12.0 : (guiParams.cameraMaxDistance || 15.0);
+      controls.minDistance = minDist;
+      controls.maxDistance = maxDist;
+      
+      controls.autoRotate = guiParams.autoRotate !== undefined ? guiParams.autoRotate : true;
+      controls.autoRotateSpeed = guiParams.autoRotateSpeed !== undefined ? guiParams.autoRotateSpeed : 0.2;
+
+      if (!animationStartTime) animationStartTime = performance.now();
+
+      const sphereGeometry = new THREE.SphereGeometry(1, 96, 96);
+      // IMPORTANT: Ensure your geometry has UVs. SphereGeometry has them by default.
+      // If using a custom geometry, make sure it has UV attributes.
+      sphereGeometry.computeTangents();
+
+      const lightsUniformValue = [];
+      const numActiveLightsForShader = Math.min(
+        guiParams.numLights,
+        guiParams.lights.length,
+        MAX_LIGHTS_IN_SHADER
+      );
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        const lightData = guiParams.lights[i];
+        lightsUniformValue.push({
+          enabled: (i < numActiveLightsForShader) ? (lightData.enabled !== undefined ? lightData.enabled : false) : false,
+          color: new THREE.Color().setRGB(lightData.color?.r ?? 0, lightData.color?.g ?? 0, lightData.color?.b ?? 0),
+          intensity: lightData.intensity !== undefined ? lightData.intensity : 0,
+          diffuseContribution: lightData.diffuseContribution !== undefined ? lightData.diffuseContribution : 1.0,
+          specularContribution: lightData.specularContribution !== undefined ? lightData.specularContribution : 1.0,
+          specularShininess: lightData.specularShininess !== undefined ? lightData.specularShininess : 32.0,
+          position: new THREE.Vector3(lightData.position?.x ?? 0, lightData.position?.y ?? 0, lightData.position?.z ?? 5.0),
+          diffuseHfNormalAmount: lightData.diffuseHfNormalAmount !== undefined ? lightData.diffuseHfNormalAmount : 1.0,
+          specularHfNormalAmount: lightData.specularHfNormalAmount !== undefined ? lightData.specularHfNormalAmount : 1.0
+        });
+      }
+
+      const mainUniforms = {
+        uTime: { value: 0.0 },
+        uVertexDisplacementScale: { value: guiParams.vertexDisplacementScale },
+        uVertexAnimationAmount: { value: guiParams.vertexAnimationAmount },
+        uVertexAnimationSpeed: { value: guiParams.vertexAnimationSpeed },
+        uLfMasterScale: { value: guiParams.lfMasterScale },
+        uLfPatternTimeScale: { value: guiParams.lfPatternTimeScale },
+        uLfOctaves: { value: Math.floor(guiParams.lfOctaves) },
+        uLfLacunarity: { value: guiParams.lfLacunarity },
+        uLfPersistence: { value: guiParams.lfPersistence },
+        uLfNoiseContrastLower: { value: guiParams.lfNoiseContrastLower },
+        uLfNoiseContrastUpper: { value: guiParams.lfNoiseContrastUpper },
+        uLfNormalStrength: { value: guiParams.lfNormalStrength },
+        uLfFlowScale: { value: guiParams.lfFlowScale },
+        uLfFlowStrength: { value: guiParams.lfFlowStrength },
+        uLfFlowTimeScale: { value: guiParams.lfFlowTimeScale },
+        uEnablePeriodicLf: { value: guiParams.lfEnablePeriodic },
+        uPeriodicLengthLf: { value: new THREE.Vector3(guiParams.lfPeriodicLengthX, guiParams.lfPeriodicLengthY, guiParams.lfPeriodicLengthZ) },
+        uHfEnable: { value: guiParams.hfEnable },
+        uHfMasterScale: { value: guiParams.hfMasterScale },
+        uHfPatternTimeScale: { value: guiParams.hfPatternTimeScale },
+        uHfOctaves: { value: Math.floor(guiParams.hfOctaves) },
+        uHfLacunarity: { value: guiParams.hfLacunarity },
+        uHfPersistence: { value: guiParams.hfPersistence },
+        uHfNormalStrength: { value: guiParams.hfNormalStrength },
+        uHfFlowScale: { value: guiParams.hfFlowScale },
+        uHfFlowStrength: { value: guiParams.hfFlowStrength },
+        uHfFlowTimeScale: { value: guiParams.hfFlowTimeScale },
+        uColor1: { value: new THREE.Color().setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b) },
+        uColor2: { value: new THREE.Color().setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b) },
+        uColor3: { value: new THREE.Color().setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b) },
+        uTroughColorMultiplier: { value: new THREE.Vector3(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b) },
+        uTroughMin: { value: guiParams.troughMin },
+        uTroughMax: { value: guiParams.troughMax },
+        uTroughGamma: { value: guiParams.troughGamma },
+        uColorNoiseScale: { value: guiParams.colorNoiseScale },
+        uColorNoiseTimeScale: { value: guiParams.colorNoiseTimeScale },
+        uColorNoiseAnimationAmount: {value: guiParams.colorNoiseAnimationAmount},
+        uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
+        uLights: { value: lightsUniformValue },
+        uNumLights: { value: numActiveLightsForShader },
+        uShininessMap: { value: shininessTexture }
+      };
+
+      const mainMaterial = new THREE.ShaderMaterial({
+        vertexShader: mainVertexShader,
+        fragmentShader: mainFragmentShader,
+        uniforms: mainUniforms,
+      });
+
+      sphere = new THREE.Mesh(sphereGeometry, mainMaterial);
+      
+      // MOBILE FIX 6: Ensure sphere is at origin
+      sphere.position.set(0, 0, 0);
+      scene.add(sphere);
+
+      setupGUI();
+      
+      // MOBILE FIX 7: Update controls after camera positioning
+      controls.update();
+      
+      window.addEventListener('resize', onWindowResize);
+      
+      // MOBILE FIX 8: Handle orientation change for mobile devices
+      window.addEventListener('orientationchange', () => {
+        setTimeout(onWindowResize, 100);
+      });
+    }
+
+    function setupGUI()
+    {
+      gui = new GUI();
+      gui.title("Shader Controls");
+      gui.close();
+
+      // Create preset management folder
+      const presetFolder = gui.addFolder('Presets');
+
+      // Use the globally defined presetState
+      presetState.currentPreset = currentPresetName;
+
+      // Display current preset
+      const currentPresetController = presetFolder.add(presetState, 'currentPreset')
+        .name('Current Preset')
+        .disable();
+
+      // Create dropdown for preset selection
+      const getPresetList = () =>
+      {
+        // Create a consolidated list of preset options
+        const presetOptions = { 'Default': 'Default' };
+
+        // Add default presets
+        Object.keys(defaultPresets).forEach(key =>
+        {
+          presetOptions[key] = key;
+        });
+
+        // Add user presets (will override defaults if same name)
+        Object.keys(userPresets).forEach(key =>
+        {
+          presetOptions[key] = key;
+        });
+
+        console.log("Available presets:", presetOptions);
+        return presetOptions;
+      };
+
+      // Preset selection dropdown
+      const presetController = presetFolder.add({ preset: 'Default' }, 'preset', getPresetList())
+        .name('Load Preset')
+        .onChange(presetName =>
+        {
+          if (presetName && presetName !== 'Default')
+          {
+            applyPreset(presetName);
+            presetState.currentPreset = presetName;
+            currentPresetController.updateDisplay();
+          } else if (presetName === 'Default')
+          {
+            window.location.reload();
+          }
+        });
+
+      // Function to refresh the preset controller (for use after saving/deleting presets)
+      const refreshPresetController = () =>
+      {
+        // The lil-gui library uses different property names in different versions
+        // Try both __controllers (newer versions) and controllers (older versions)
+        const controllers = presetFolder.__controllers || presetFolder.controllers;
+        window.location.reload();
+      };
+
+      // Input field for new preset name
+      presetFolder.add(presetState, 'newPresetName')
+        .name('New Preset Name');
+
+      // Add transition time slider
+      presetFolder.add(presetState, 'transitionTime', 0.0, 5.0, 0.1)
+        .name('Transition Time (s)')
+        .onChange(value =>
+        {
+          // When changed, this value will be used for the next preset transition
+          console.log(`Transition time set to ${value} seconds`);
+        });
+
+      // Save button
+      presetFolder.add({
+        savePreset: () =>
+        {
+          if (presetState.newPresetName && presetState.newPresetName.trim() !== '')
+          {
+            if (saveCurrentAsPreset(presetState.newPresetName))
+            {
+              // Update current preset display
+              presetState.currentPreset = presetState.newPresetName;
+              currentPresetController.updateDisplay();
+
+              // Refresh preset dropdown
+              refreshPresetController();
+
+              alert(`Preset "${presetState.newPresetName}" has been saved.`);
+            }
+          }
+          else
+          {
+            alert("Please enter a name for the preset.");
+          }
+        }
+      }, 'savePreset')
+        .name('Save Current Preset');
+
+      // Delete button
+      presetFolder.add({
+        deletePreset: () =>
+        {
+          if (presetState.currentPreset !== 'Default' &&
+            userPresets[presetState.currentPreset])
+          {
+            // Confirm with the user
+            if (confirm(`Are you sure you want to delete the preset "${presetState.currentPreset}"?`))
+            {
+              const nameToDelete = presetState.currentPreset;
+              if (deletePreset(nameToDelete))
+              {
+                // Reset current preset display
+                presetState.currentPreset = 'Default';
+                currentPresetController.updateDisplay();
+
+                // Refresh the preset dropdown
+                refreshPresetController();
+
+                alert(`Preset "${nameToDelete}" has been deleted.`);
+              }
+            }
+          }
+          else
+          {
+            alert("Cannot delete the Default preset or no user preset is currently selected.");
+          }
+        }
+      }, 'deletePreset')
+        .name('Delete Current Preset');
+
+      const lfDispFolder = gui.addFolder('LF Displacement');
+      // Add GUI controls for various parameters
+      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -0.6, 0.6, 0.001).name('Vertex Disp. Scale')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'vertexAnimationAmount', -1.0, 1.0, 0.001).name('Vertex Animation Amount')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
+      lfDispFolder.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
+      lfDispFolder.close();
+
+      const lfFolder = gui.addFolder('LF Noise (Displacement)');
+      const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
+      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.01).name('Master Scale').onChange(v => { sphere.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.001).name('Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfOctaves', 1, 8, 1).name('Octaves').onChange(v => { sphere.material.uniforms.uLfOctaves.value = Math.floor(v); saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.01).name('Lacunarity').onChange(v => { sphere.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.01).name('Persistence').onChange(v => { sphere.material.uniforms.uLfPersistence.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.01).name('Contrast Min').onChange(v => { sphere.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.01).name('Contrast Max').onChange(v => { sphere.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.001).name('LF Normal Strength').onChange(v => { sphere.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
+
+      const lfFlowFolder = lfFolder.addFolder('Flow Field (Advection)');
+      lfFlowFolder.add(guiParams, 'lfFlowScale', 0.001, 1.0, 0.01).name('Flow Detail Scale').onChange(v => { sphere.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { sphere.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { sphere.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
+
+      // --- START: Added Periodic Settings ---
+      const lfPeriodicFolder = lfFolder.addFolder('Periodic Tiling');
+      lfPeriodicFolder.add(guiParams, 'lfEnablePeriodic').name('Enable Periodic Tiling')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uEnablePeriodicLf.value = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthX', 1.0, 20.0, 0.1).name('Period Length X')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.x = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthY', 1.0, 20.0, 0.1).name('Period Length Y')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.y = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthZ', 1.0, 20.0, 0.1).name('Period Length Z')
+        .onChange(v =>
+        {
+          sphere.material.uniforms.uPeriodicLengthLf.value.z = v;
+          saveSettings();
+        });
+      lfPeriodicFolder.close(); // Close by default unless needed open
+      // --- END: Added Periodic Settings ---
+
+      lfFolder.close();
+
+      const colorFolder = gui.addFolder('Surface Colors');
+      colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { sphere.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { sphere.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color3').name('Color 3 (Base/Trough)').onChange(v => { sphere.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'troughColorMultiplier').name('Trough Multiplier').onChange(v => { sphere.material.uniforms.uTroughColorMultiplier.value.set(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b); saveSettings(); });
+      colorFolder.add(guiParams, 'troughMin', 0.0, 1.0, 0.001).name('Trough Min').onChange(v => { sphere.material.uniforms.uTroughMin.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughMax', 0.0, 1.0, 0.001).name('Trough Max').onChange(v => { sphere.material.uniforms.uTroughMax.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.01).name('Trough Gamma').onChange(v => { sphere.material.uniforms.uTroughGamma.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.001).name('Color Noise Scale').onChange(v => { sphere.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'colorNoiseTimeScale', 0.0, 10.0, 0.001).name('Color Noise Evo Speed').onChange(v => { sphere.material.uniforms.uColorNoiseTimeScale.value = v; saveSettings(); });
+      colorFolder.close(); // Close Color folder by default
+      colorFolder.add(guiParams, 'colorNoiseAnimationAmount', 0.0, 1.0, 0.001).name('Color Animation Amount').onChange(v =>
+      {
+        sphere.material.uniforms.uColorNoiseAnimationAmount.value = v; saveSettings();
+      });
+
+      const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
+      hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { sphere.material.uniforms.uHfEnable.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.001).name('HF Master Scale').onChange(v => { sphere.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.001).name('HF Pattern Evo Speed').onChange(v => { sphere.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfOctaves', 1, 8, 1).name('HF Octaves').onChange(v => { sphere.material.uniforms.uHfOctaves.value = Math.floor(v); saveSettings(); });
+      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.01).name('HF Lacunarity').onChange(v => { sphere.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.01).name('HF Persistence').onChange(v => { sphere.material.uniforms.uHfPersistence.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.001).name('HF Normal Strength').onChange(v => { sphere.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
+
+      const hfFlowFolder = hfFolder.addFolder('HF Flow Field');
+      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { sphere.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 10.0, 0.01).name('HF Flow Strength').onChange(v => { sphere.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { sphere.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
+      hfFlowFolder.close(); // Close HF flow by default
+      hfFolder.close(); // Close HF folder by default
+
+      const lightingFolder = gui.addFolder('Lighting System');
+      lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.01).name('Ambient Intensity')
+        .onChange(v => { if (sphere) sphere.material.uniforms.uAmbientIntensity.value = v; saveSettings(); });
+
+      lightingFolder.add(guiParams, 'numLights', 0, MAX_LIGHTS_IN_SHADER, 1).name('Active Lights Count')
+        .onChange(v =>
+        {
+          if (sphere)
+          {
+            const newNumActive = Math.min(v, MAX_LIGHTS_IN_SHADER);
+            sphere.material.uniforms.uNumLights.value = newNumActive;
+            // Ensure the enabled state in the shader matches the gui state
+            // for the newly active/inactive lights
+            for (let k = 0; k < MAX_LIGHTS_IN_SHADER; k++)
+            {
+              if (k < newNumActive)
+              {
+                sphere.material.uniforms.uLights.value[k].enabled = guiParams.lights[k].enabled;
+              } else
+              {
+                sphere.material.uniforms.uLights.value[k].enabled = false; // Force disable in shader if beyond count
+              }
+            }
+            // Optionally: Visually enable/disable the folders in the GUI (more complex)
+          }
+          saveSettings();
+        });
+
+      for (let i = 0; i < MAX_LIGHTS_IN_SHADER; i++)
+      {
+        const lightGuiParams = guiParams.lights[i];
+        // Ensure light uniform exists before accessing (should always be true after init)
+        if (!sphere || !sphere.material || !sphere.material.uniforms.uLights || !sphere.material.uniforms.uLights.value[i])
+        {
+          console.error(`Cannot setup GUI for light ${i}: Uniforms not ready.`);
+          continue; // Skip this light if something is wrong
+        }
+        const lightUniformRef = sphere.material.uniforms.uLights.value[i];
+        const lightFolder = lightingFolder.addFolder(lightGuiParams.name || `Light ${i + 1}`);
+
+        lightFolder.add(lightGuiParams, 'enabled').name('Enabled (if active)')
+          .onChange(v =>
+          {
+            lightGuiParams.enabled = v; // Update the guiParams state
+            // Only update the shader uniform if this light is within the active count
+            if (i < sphere.material.uniforms.uNumLights.value)
+            {
+              lightUniformRef.enabled = v;
+            }
+            saveSettings();
+          });
+        lightFolder.addColor(lightGuiParams, 'color').name('Color')
+          .onChange(() =>
+          {
+            lightUniformRef.color.setRGB(lightGuiParams.color.r, lightGuiParams.color.g, lightGuiParams.color.b);
+            saveSettings();
+          });
+        lightFolder.add(lightGuiParams, 'intensity', 0.0, 30.0, 0.01).name('Intensity')
+          .onChange(v => { lightUniformRef.intensity = v; saveSettings(); });
+
+        const contributionsFolder = lightFolder.addFolder('Contributions & Shininess');
+        contributionsFolder.add(lightGuiParams, 'diffuseContribution', 0.0, 1.0, 0.01).name('Diffuse')
+          .onChange(v => { lightUniformRef.diffuseContribution = v; saveSettings(); });
+        contributionsFolder.add(lightGuiParams, 'specularContribution', 0.0, 1.0, 0.01).name('Specular')
+          .onChange(v => { lightUniformRef.specularContribution = v; saveSettings(); });
+        contributionsFolder.add(lightGuiParams, 'specularShininess', 1.0, 512.0, 1.0).name('Shininess (Base)') // << UPDATED NAME
+          .onChange(v => { lightUniformRef.specularShininess = v; saveSettings(); });
+        contributionsFolder.close(); // Close by default
+
+        const positionFolder = lightFolder.addFolder('Position (View Space)');
+        positionFolder.add(lightGuiParams.position, 'x', -30, 30, 0.1).name('X')
+          .onChange(v => { lightUniformRef.position.x = v; saveSettings(); });
+        positionFolder.add(lightGuiParams.position, 'y', -30, 30, 0.1).name('Y')
+          .onChange(v => { lightUniformRef.position.y = v; saveSettings(); });
+        positionFolder.add(lightGuiParams.position, 'z', -30, 30, 0.1).name('Z')
+          .onChange(v => { lightUniformRef.position.z = v; saveSettings(); });
+        positionFolder.close(); // Close by default
+
+        const hfNormalsFolder = lightFolder.addFolder('HF Normal Influence');
+        hfNormalsFolder.add(lightGuiParams, 'diffuseHfNormalAmount', 0.0, 1.0, 0.01).name('Diffuse HF Amt')
+          .onChange(v => { lightUniformRef.diffuseHfNormalAmount = v; saveSettings(); });
+        hfNormalsFolder.add(lightGuiParams, 'specularHfNormalAmount', 0.0, 1.0, 0.01).name('Specular HF Amt')
+          .onChange(v => { lightUniformRef.specularHfNormalAmount = v; saveSettings(); });
+        hfNormalsFolder.close(); // Close by default
+
+        // Close light folders by default, maybe open the first one if active
+        if (i >= guiParams.numLights || i > 0)
+        { // Close if inactive or not the first light
+          lightFolder.close();
+        } else if (i === 0)
+        {
+          lightFolder.open(); // Keep first light folder open if active
+        }
+      }
+      lightingFolder.close();
+
+      const sceneFolder = gui.addFolder('Scene & Camera');
+      sceneFolder.add(guiParams, 'autoRotate').name('Auto Rotate').onChange(v => { controls.autoRotate = v; saveSettings(); });
+      sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.01).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
+      sceneFolder.close(); // Keep Scene folder open
+
+      gui.controllersRecursive().forEach(controller =>
+      {
+        if (controller.updateDisplay) controller.updateDisplay();
+      });
+    }
+
+    // MOBILE FIX 9: Enhanced window resize handling
+    function onWindowResize()
+    {
+      const isMobile = window.innerWidth < 768;
+      
+      // Update camera aspect ratio
+      camera.aspect = window.innerWidth / window.innerHeight;
+      
+      // Adjust field of view for mobile if needed
+      if (isMobile && camera.fov < 65) {
+        camera.fov = 70;
+      } else if (!isMobile && camera.fov > 65) {
+        camera.fov = 60;
+      }
+      
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      
+      // Force a redraw
+      renderer.render(scene, camera);
+    }
+
+    function animateScene()
+    {
+      requestAnimationFrame(animateScene);
+      const currentTime = performance.now();
+
+      // Ensure animation start time is initialized
+      if (!animationStartTime)
+      {
+        animationStartTime = currentTime;
+      }
+
+      const elapsedTimeSeconds = (currentTime - animationStartTime) * 0.001;
+
+      // Handle transitions if active
+      if (isTransitioning && startSettings && targetSettings)
+      {
+        // Calculate how much time has passed since transition started
+        const transitionElapsedTime = Math.max(0, elapsedTimeSeconds - transitionStartTime);
+
+        // Ensure we don't divide by zero and the progress is properly calculated
+        const transitionDurationSafe = Math.max(0.001, transitionDuration);
+
+        // Ensure progress is clamped between 0 and 1, and follows a smooth curve
+        // Using smoothstep for a more natural transition
+        const rawProgress = Math.min(Math.max(transitionElapsedTime / transitionDurationSafe, 0.0), 1.0);
+        // Smoothstep: 3x^2 - 2x^3 gives a nice ease-in, ease-out curve
+        const progress = rawProgress * rawProgress * (3.0 - 2.0 * rawProgress);
+
+        // Log for debugging - only log on significant changes to reduce console spam
+        const progressPercent = Math.floor(rawProgress * 100);
+
+        // Blend the parameters based on progress
+        if (rawProgress < 1.0)
+        {
+          // Still transitioning - blend values
+          blendCurrentSettings(progress);
+        } else
+        {
+          // Transition complete
+          console.log(`Transition complete! Duration: ${transitionElapsedTime.toFixed(2)}s, Target: ${transitionDuration.toFixed(2)}s`);
+          isTransitioning = false;
+
+          // Apply final settings directly
+          applyPresetSettingsImmediately(targetSettings);
+
+          // Clean up
+          startSettings = null;
+          targetSettings = null;
+        }
+      }
+
+      // Update the shader time uniform
+      if (sphere && sphere.material && sphere.material.uniforms.uTime)
+      {
+        const timeValue = elapsedTimeSeconds *
+          (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
+
+        // Continue normal animation even during transitions
+        // This prevents the "snap then delay" effect by maintaining consistent animation
+        sphere.material.uniforms.uTime.value = timeValue;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    /**
+     * Blend between start and target settings based on progress
+     * @param {number} progress Transition progress (0.0 to 1.0)
+     */
+    function blendCurrentSettings(progress)
+    {
+      if (!startSettings || !targetSettings)
+      {
+        console.error("Missing start or target settings for blending");
+        return;
+      }
+
+      // Create a complete blended object using our improved blendValues function
+      const blendedSettings = blendValues(startSettings, targetSettings, progress);
+
+      // Skip transitionTime in the settings update
+      delete blendedSettings.transitionTime;
+
+      // Copy all blended values to guiParams
+      for (const key in blendedSettings)
+      {
+        if (key === 'transitionTime') continue;
+
+        // Copy property to guiParams with appropriate handling of different types
+        if (typeof blendedSettings[key] === 'object' && blendedSettings[key] !== null)
+        {
+          // Special case for lights - ensure all properties are preserved
+          if (key === 'lights' && Array.isArray(blendedSettings[key]))
+          {
+            if (!Array.isArray(guiParams[key]))
+            {
+              guiParams[key] = [];
+            }
+
+            // Limit to maximum lights in shader
+            const maxLights = Math.min(blendedSettings[key].length, MAX_LIGHTS_IN_SHADER);
+
+            for (let i = 0; i < maxLights; i++)
+            {
+              if (!guiParams[key][i])
+              {
+                guiParams[key][i] = {};
+              }
+
+              // Make sure all properties are carried over from blended settings
+              if (blendedSettings[key][i])
+              {
+                for (const prop in blendedSettings[key][i])
+                {
+                  if (typeof blendedSettings[key][i][prop] === 'object' &&
+                    !Array.isArray(blendedSettings[key][i][prop]))
+                  {
+                    // Deep copy for nested objects (like position, color)
+                    if (!guiParams[key][i][prop])
+                    {
+                      guiParams[key][i][prop] = {};
+                    }
+                    // Use structured clone to avoid reference issues
+                    guiParams[key][i][prop] = JSON.parse(
+                      JSON.stringify(blendedSettings[key][i][prop])
+                    );
+                  } else
+                  {
+                    // Direct assignment for primitives
+                    guiParams[key][i][prop] = blendedSettings[key][i][prop];
+                  }
+                }
+              }
+            }
+          } else if (Array.isArray(blendedSettings[key]))
+          {
+            // Handle other arrays
+            guiParams[key] = JSON.parse(JSON.stringify(blendedSettings[key]));
+          } else
+          {
+            // Handle objects
+            if (typeof guiParams[key] !== 'object' || guiParams[key] === null)
+            {
+              guiParams[key] = {};
+            }
+            // Deep copy the object to avoid reference issues
+            guiParams[key] = JSON.parse(JSON.stringify(blendedSettings[key]));
+          }
+        } else
+        {
+          // Handle primitive values with direct assignment
+          guiParams[key] = blendedSettings[key];
+        }
+      }
+
+      // Update material uniforms
+      updateAllMaterialUniforms();
+
+      // Update GUI controllers during transition to reflect current blended values
+      if (gui)
+      {
+        gui.controllersRecursive().forEach(controller =>
+        {
+          if (controller.updateDisplay) controller.updateDisplay();
+        });
+      }
+    }
+
+    // Function to directly apply the idle preset (helpful for debugging)
+    function forceApplyIdlePreset()
+    {
+      if (defaultPresets && defaultPresets.idle)
+      {
+        console.log("Forcing application of idle preset:");
+        applyPreset("idle");
+      } else
+      {
+        console.error("Cannot force apply idle preset - not found in default presets");
+      }
+    }
+
+    // Function to set up the preset button listeners
+    function setupPresetButtons() {
+      const presetButtons = document.querySelectorAll('.preset-button');
+      
+      // Function to update active button state
+      function updateActiveButton(activePreset) {
+        presetButtons.forEach(button => {
+          if (button.dataset.preset === activePreset) {
+            button.classList.add('active');
+          } else {
+            button.classList.remove('active');
+          }
+        });
+      }
+      
+      // Add click handlers to all preset buttons
+      presetButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const presetName = this.dataset.preset;
+          console.log(`Preset button clicked: ${presetName}`);
+          
+          // Apply the selected preset
+          if (presetName && (defaultPresets[presetName] || userPresets[presetName])) {
+            applyPreset(presetName);
+            
+            // Update button states
+            updateActiveButton(presetName);
+            
+            // Update current preset name in state
+            presetState.currentPreset = presetName;
+            
+            // Update GUI if it exists
+            if (gui) {
+              // Update all controllers to reflect current state
+              gui.controllersRecursive().forEach(controller => {
+                if (controller.updateDisplay) controller.updateDisplay();
+              });
+            }
+          } else {
+            console.error(`Preset not found: ${presetName}`);
+          }
+        });
+      });
+      
+      // Set the initial active button based on current preset
+      // This will be called after a short delay to ensure presets are loaded
+      setTimeout(() => {
+        updateActiveButton(currentPresetName);
+      }, 1500);
+    }
+
+    async function main()
+    {
+      try
+      {
+        await fetchExternalDefaultSettings();
+        await fetchDefaultPresets();
+        loadUserPresets();
+        loadSettings();
+        await loadShadersAndTextures(); // << MODIFIED FUNCTION CALL
+        
+        // Setup the preset buttons after everything is loaded
+        setupPresetButtons();
+        
+        setTimeout(forceApplyIdlePreset, 1000); // Force apply idle preset after 1 second
+      } catch (error)
+      {
+        console.error("Failed to initialize the application:", error);
+        const infoElement = document.getElementById('info');
+        if (infoElement)
+        {
+          infoElement.innerHTML = `Critical error during application initialization: ${error.message}. Please check the console.`;
+        }
+      }
+    }
+
+    main();
+
+  </script>
+</body>
+
+</html>

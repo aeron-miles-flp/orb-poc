@@ -1,0 +1,706 @@
+{
+  "idle": {
+    "vertexDisplacementScale": 0.261,
+    "vertexAnimationAmount": 0.0429999999999999,
+    "vertexAnimationSpeed": 4.244,
+    "animationSpeed": 0.7583,
+    "autoRotate": false,
+    "autoRotateSpeed": 2,
+    "sceneBackgroundColor": "#202025",
+    "cameraFov": 60,
+    "cameraPosition": {
+      "x": 0,
+      "y": 0.75,
+      "z": 3
+    },
+    "cameraMinDistance": 1,
+    "cameraMaxDistance": 15,
+    "lfMasterScale": 1,
+    "lfPatternTimeScale": 0.051,
+    "lfOctaves": 2,
+    "lfLacunarity": 2.06,
+    "lfPersistence": 0.98,
+    "lfNoiseContrastLower": 0,
+    "lfNoiseContrastUpper": 1,
+    "lfNormalStrength": 0,
+    "lfFlowScale": 0.22,
+    "lfFlowStrength": 0.35,
+    "lfFlowTimeScale": 0.25,
+    "lfEnablePeriodic": false,
+    "lfPeriodicLengthX": 10,
+    "lfPeriodicLengthY": 10,
+    "lfPeriodicLengthZ": 10,
+    "hfEnable": true,
+    "hfMasterScale": 1.012,
+    "hfPatternTimeScale": 1,
+    "hfOctaves": 1,
+    "hfLacunarity": 1.84,
+    "hfPersistence": 0.59,
+    "hfNormalStrength": 0.386,
+    "hfFlowScale": 2.7,
+    "hfFlowStrength": 1.94,
+    "hfFlowTimeScale": 0.5,
+    "color1": {
+      "r": 0.7058823529411765,
+      "g": 0.11764705882352941,
+      "b": 0.01568627450980392
+    },
+    "color2": {
+      "r": 0,
+      "g": 0.6392156862745098,
+      "b": 0.4392156862745098
+    },
+    "color3": {
+      "r": 0.3333333333333333,
+      "g": 0.2,
+      "b": 0.4235294117647059
+    },
+    "troughColorMultiplier": {
+      "r": 0.03529411764705882,
+      "g": 0.03529411764705882,
+      "b": 0.08235294117647059
+    },
+    "troughMin": 0,
+    "troughMax": 1,
+    "troughGamma": 6.73,
+    "colorNoiseScale": 0.5491,
+    "colorNoiseTimeScale": 0.5,
+    "colorNoiseAnimationAmount": 0.22,
+    "colorNoiseAnimationSpeed": 0,
+    "ambientIntensity": 3.13,
+    "numLights": 3,
+    "lights": [
+      {
+        "name": "Light 1",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 19.58,
+        "diffuseContribution": 0.2,
+        "specularContribution": 0.28,
+        "specularShininess": 98,
+        "position": {
+          "x": 0,
+          "y": 30,
+          "z": 19
+        },
+        "diffuseHfNormalAmount": 1,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 2",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 0.30196078431372547,
+          "b": 0
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0.62,
+        "specularShininess": 2,
+        "position": {
+          "x": 2.5,
+          "y": -8.5,
+          "z": -9.6
+        },
+        "diffuseHfNormalAmount": 0,
+        "specularHfNormalAmount": 0.16
+      },
+      {
+        "name": "Light 3",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 1,
+        "position": {
+          "x": -2.1,
+          "y": 30,
+          "z": -22.3
+        },
+        "diffuseHfNormalAmount": 0.25,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 4",
+        "enabled": false,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 32,
+        "position": {
+          "x": 30,
+          "y": 3.4,
+          "z": -30
+        },
+        "diffuseHfNormalAmount": 0.33,
+        "specularHfNormalAmount": 1
+      }
+    ],
+    "lightIntensity": 1.82,
+    "specularColor": {
+      "r": 0.4196078431372549,
+      "g": 1,
+      "b": 0.9019607843137255
+    },
+    "shininess": 225,
+    "specularStrength": 0.56,
+    "rimLightColor": {
+      "r": 1,
+      "g": 0.34901960784313724,
+      "b": 0
+    },
+    "rimLightIntensity": 8.87,
+    "rimLightPosition": {
+      "x": -0.8,
+      "y": -10,
+      "z": -2.1
+    },
+    "rimLightDiffuse": 0.95,
+    "rimLightSpecular": 0,
+    "rimLightShininess": 1,
+    "transitionTime": 1
+  },
+  "thinking": {
+    "vertexDisplacementScale": -0.316,
+    "vertexAnimationAmount": 0.261,
+    "vertexAnimationSpeed": 15,
+    "animationSpeed": 0.7583,
+    "autoRotate": false,
+    "autoRotateSpeed": 2,
+    "sceneBackgroundColor": "#202025",
+    "cameraFov": 60,
+    "cameraPosition": {
+      "x": 0,
+      "y": 0.75,
+      "z": 3
+    },
+    "cameraMinDistance": 1,
+    "cameraMaxDistance": 15,
+    "lfMasterScale": 1,
+    "lfPatternTimeScale": 0.051,
+    "lfOctaves": 2,
+    "lfLacunarity": 1.5,
+    "lfPersistence": 1,
+    "lfNoiseContrastLower": 0,
+    "lfNoiseContrastUpper": 1,
+    "lfNormalStrength": 0,
+    "lfFlowScale": 0.22,
+    "lfFlowStrength": 2.99,
+    "lfFlowTimeScale": 0.25,
+    "lfEnablePeriodic": false,
+    "lfPeriodicLengthX": 10,
+    "lfPeriodicLengthY": 10,
+    "lfPeriodicLengthZ": 10,
+    "hfEnable": true,
+    "hfMasterScale": 1.012,
+    "hfPatternTimeScale": 1,
+    "hfOctaves": 1,
+    "hfLacunarity": 1.84,
+    "hfPersistence": 0.59,
+    "hfNormalStrength": 0.386,
+    "hfFlowScale": 2.7,
+    "hfFlowStrength": 1,
+    "hfFlowTimeScale": 0.5,
+    "color1": {
+      "r": 0.7058823529411765,
+      "g": 0.11764705882352941,
+      "b": 0.01568627450980392
+    },
+    "color2": {
+      "r": 0,
+      "g": 0.30196078431372547,
+      "b": 0.20392156862745098
+    },
+    "color3": {
+      "r": 0.3333333333333333,
+      "g": 0.2,
+      "b": 0.4235294117647059
+    },
+    "troughColorMultiplier": {
+      "r": 0.03529411764705882,
+      "g": 0.03529411764705882,
+      "b": 0.08235294117647059
+    },
+    "troughMin": 0.262,
+    "troughMax": 0.693,
+    "troughGamma": 7.57,
+    "colorNoiseScale": 0.3041,
+    "colorNoiseTimeScale": 0.5,
+    "colorNoiseAnimationAmount": 0.22,
+    "colorNoiseAnimationSpeed": 0,
+    "ambientIntensity": 4.02,
+    "numLights": 3,
+    "lights": [
+      {
+        "name": "Light 1",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 19.58,
+        "diffuseContribution": 0.2,
+        "specularContribution": 0.28,
+        "specularShininess": 98,
+        "position": {
+          "x": 0,
+          "y": 30,
+          "z": 19
+        },
+        "diffuseHfNormalAmount": 1,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 2",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 0.30196078431372547,
+          "b": 0
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0.62,
+        "specularShininess": 2,
+        "position": {
+          "x": 2.5,
+          "y": -8.5,
+          "z": -9.6
+        },
+        "diffuseHfNormalAmount": 0,
+        "specularHfNormalAmount": 0.16
+      },
+      {
+        "name": "Light 3",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 1,
+        "position": {
+          "x": -2.1,
+          "y": 30,
+          "z": -22.3
+        },
+        "diffuseHfNormalAmount": 0.25,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 4",
+        "enabled": false,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 32,
+        "position": {
+          "x": 30,
+          "y": 3.4,
+          "z": -30
+        },
+        "diffuseHfNormalAmount": 0.33,
+        "specularHfNormalAmount": 1
+      }
+    ],
+    "lightIntensity": 1.82,
+    "specularColor": {
+      "r": 0.4196078431372549,
+      "g": 1,
+      "b": 0.9019607843137255
+    },
+    "shininess": 225,
+    "specularStrength": 0.56,
+    "rimLightColor": {
+      "r": 1,
+      "g": 0.34901960784313724,
+      "b": 0
+    },
+    "rimLightIntensity": 8.87,
+    "rimLightPosition": {
+      "x": -0.8,
+      "y": -10,
+      "z": -2.1
+    },
+    "rimLightDiffuse": 0.95,
+    "rimLightSpecular": 0,
+    "rimLightShininess": 1,
+    "transitionTime": 1
+  },
+  "listening": {
+    "vertexDisplacementScale": -0.167,
+    "vertexAnimationAmount": -1,
+    "vertexAnimationSpeed": 3.869,
+    "animationSpeed": 0.7583,
+    "autoRotate": false,
+    "autoRotateSpeed": 2,
+    "sceneBackgroundColor": "#202025",
+    "cameraFov": 60,
+    "cameraPosition": {
+      "x": 0,
+      "y": 0.75,
+      "z": 3
+    },
+    "cameraMinDistance": 1,
+    "cameraMaxDistance": 15,
+    "lfMasterScale": 1,
+    "lfPatternTimeScale": 0.051,
+    "lfOctaves": 2,
+    "lfLacunarity": 1.5,
+    "lfPersistence": 1,
+    "lfNoiseContrastLower": 0,
+    "lfNoiseContrastUpper": 1,
+    "lfNormalStrength": 0,
+    "lfFlowScale": 0.22,
+    "lfFlowStrength": 0.56,
+    "lfFlowTimeScale": 0.25,
+    "lfEnablePeriodic": false,
+    "lfPeriodicLengthX": 10,
+    "lfPeriodicLengthY": 10,
+    "lfPeriodicLengthZ": 10,
+    "hfEnable": true,
+    "hfMasterScale": 1.012,
+    "hfPatternTimeScale": 1,
+    "hfOctaves": 1,
+    "hfLacunarity": 1.84,
+    "hfPersistence": 0.59,
+    "hfNormalStrength": 1,
+    "hfFlowScale": 2.7,
+    "hfFlowStrength": 0.69,
+    "hfFlowTimeScale": 0.5,
+    "color1": {
+      "r": 0.7058823529411765,
+      "g": 0.11764705882352941,
+      "b": 0.01568627450980392
+    },
+    "color2": {
+      "r": 0,
+      "g": 0.30196078431372547,
+      "b": 0.20392156862745098
+    },
+    "color3": {
+      "r": 0.3333333333333333,
+      "g": 0.2,
+      "b": 0.4235294117647059
+    },
+    "troughColorMultiplier": {
+      "r": 0.03529411764705882,
+      "g": 0.03529411764705882,
+      "b": 0.08235294117647059
+    },
+    "troughMin": 0.377,
+    "troughMax": 1,
+    "troughGamma": 1.81,
+    "colorNoiseScale": 0.3041,
+    "colorNoiseTimeScale": 0.5,
+    "colorNoiseAnimationAmount": 0.185,
+    "colorNoiseAnimationSpeed": 0,
+    "ambientIntensity": 4.02,
+    "numLights": 3,
+    "lights": [
+      {
+        "name": "Light 1",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 19.58,
+        "diffuseContribution": 0.2,
+        "specularContribution": 0.28,
+        "specularShininess": 98,
+        "position": {
+          "x": 0,
+          "y": 30,
+          "z": 19
+        },
+        "diffuseHfNormalAmount": 1,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 2",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 0.30196078431372547,
+          "b": 0
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0.62,
+        "specularShininess": 2,
+        "position": {
+          "x": 2.5,
+          "y": -8.5,
+          "z": -9.6
+        },
+        "diffuseHfNormalAmount": 0,
+        "specularHfNormalAmount": 0.16
+      },
+      {
+        "name": "Light 3",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 1,
+        "position": {
+          "x": -2.1,
+          "y": 30,
+          "z": -22.3
+        },
+        "diffuseHfNormalAmount": 0.25,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 4",
+        "enabled": false,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 32,
+        "position": {
+          "x": 30,
+          "y": 3.4,
+          "z": -30
+        },
+        "diffuseHfNormalAmount": 0.33,
+        "specularHfNormalAmount": 1
+      }
+    ],
+    "lightIntensity": 1.82,
+    "specularColor": {
+      "r": 0.4196078431372549,
+      "g": 1,
+      "b": 0.9019607843137255
+    },
+    "shininess": 225,
+    "specularStrength": 0.56,
+    "rimLightColor": {
+      "r": 1,
+      "g": 0.34901960784313724,
+      "b": 0
+    },
+    "rimLightIntensity": 8.87,
+    "rimLightPosition": {
+      "x": -0.8,
+      "y": -10,
+      "z": -2.1
+    },
+    "rimLightDiffuse": 0.95,
+    "rimLightSpecular": 0,
+    "rimLightShininess": 1,
+    "transitionTime": 1
+  },
+  "speaking": {
+    "vertexDisplacementScale": -0.6,
+    "vertexAnimationAmount": 1,
+    "vertexAnimationSpeed": 9.368,
+    "animationSpeed": 0.7583,
+    "autoRotate": false,
+    "autoRotateSpeed": 2,
+    "sceneBackgroundColor": "#202025",
+    "cameraFov": 60,
+    "cameraPosition": {
+      "x": 0,
+      "y": 0.75,
+      "z": 3
+    },
+    "cameraMinDistance": 1,
+    "cameraMaxDistance": 15,
+    "lfMasterScale": 1,
+    "lfPatternTimeScale": 0.051,
+    "lfOctaves": 2,
+    "lfLacunarity": 1.88,
+    "lfPersistence": 0.98,
+    "lfNoiseContrastLower": 0,
+    "lfNoiseContrastUpper": 1,
+    "lfNormalStrength": 0,
+    "lfFlowScale": 0.22,
+    "lfFlowStrength": 0.83,
+    "lfFlowTimeScale": 0.252,
+    "lfEnablePeriodic": false,
+    "lfPeriodicLengthX": 10,
+    "lfPeriodicLengthY": 10,
+    "lfPeriodicLengthZ": 10,
+    "hfEnable": true,
+    "hfMasterScale": 1.012,
+    "hfPatternTimeScale": 1,
+    "hfOctaves": 1,
+    "hfLacunarity": 1.84,
+    "hfPersistence": 0.59,
+    "hfNormalStrength": 0.559,
+    "hfFlowScale": 2.7,
+    "hfFlowStrength": 1.67,
+    "hfFlowTimeScale": 0.5,
+    "color1": {
+      "r": 0.7058823529411765,
+      "g": 0.11764705882352941,
+      "b": 0.01568627450980392
+    },
+    "color2": {
+      "r": 0,
+      "g": 0.6392156862745098,
+      "b": 0.4392156862745098
+    },
+    "color3": {
+      "r": 0.3333333333333333,
+      "g": 0.2,
+      "b": 0.4235294117647059
+    },
+    "troughColorMultiplier": {
+      "r": 0.03529411764705882,
+      "g": 0.03529411764705882,
+      "b": 0.08235294117647059
+    },
+    "troughMin": 0,
+    "troughMax": 1,
+    "troughGamma": 6.11,
+    "colorNoiseScale": 0.5251,
+    "colorNoiseTimeScale": 0.5,
+    "colorNoiseAnimationAmount": 0.455,
+    "colorNoiseAnimationSpeed": 0,
+    "ambientIntensity": 3.13,
+    "numLights": 3,
+    "lights": [
+      {
+        "name": "Light 1",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 19.58,
+        "diffuseContribution": 0.2,
+        "specularContribution": 0.28,
+        "specularShininess": 98,
+        "position": {
+          "x": 0,
+          "y": 30,
+          "z": 19
+        },
+        "diffuseHfNormalAmount": 1,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 2",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 0.30196078431372547,
+          "b": 0
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0.62,
+        "specularShininess": 2,
+        "position": {
+          "x": 2.5,
+          "y": -8.5,
+          "z": -9.6
+        },
+        "diffuseHfNormalAmount": 0,
+        "specularHfNormalAmount": 0.16
+      },
+      {
+        "name": "Light 3",
+        "enabled": true,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 1,
+        "position": {
+          "x": -2.1,
+          "y": 30,
+          "z": -22.3
+        },
+        "diffuseHfNormalAmount": 0.25,
+        "specularHfNormalAmount": 1
+      },
+      {
+        "name": "Light 4",
+        "enabled": false,
+        "color": {
+          "r": 1,
+          "g": 1,
+          "b": 1
+        },
+        "intensity": 30,
+        "diffuseContribution": 1,
+        "specularContribution": 0,
+        "specularShininess": 32,
+        "position": {
+          "x": 30,
+          "y": 3.4,
+          "z": -30
+        },
+        "diffuseHfNormalAmount": 0.33,
+        "specularHfNormalAmount": 1
+      }
+    ],
+    "lightIntensity": 1.82,
+    "specularColor": {
+      "r": 0.4196078431372549,
+      "g": 1,
+      "b": 0.9019607843137255
+    },
+    "shininess": 225,
+    "specularStrength": 0.56,
+    "rimLightColor": {
+      "r": 1,
+      "g": 0.34901960784313724,
+      "b": 0
+    },
+    "rimLightIntensity": 8.87,
+    "rimLightPosition": {
+      "x": -0.8,
+      "y": -10,
+      "z": -2.1
+    },
+    "rimLightDiffuse": 0.95,
+    "rimLightSpecular": 0,
+    "rimLightShininess": 1,
+    "transitionTime": 1
+  }
+}
