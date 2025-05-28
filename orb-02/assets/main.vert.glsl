@@ -176,15 +176,6 @@ vec3 get_flow_vector(vec3 flow_coord_base, float flow_anim_time) {
 vec2 calculateAdvectedUV(vec2 baseUV, vec3 flow_vector, float flowStrength) {
   // Apply flow to UV coordinates
   vec2 flowOffset = flow_vector.xy * flowStrength;
-
-  // Reduce stretching by clamping the maximum offset
-  // This prevents small UV areas from being stretched too far
-  float maxOffset = 0.3; // Maximum 30% of UV space
-  float offsetMagnitude = length(flowOffset);
-  if(offsetMagnitude > maxOffset) {
-    flowOffset = normalize(flowOffset) * maxOffset;
-  }
-
   return baseUV + flowOffset;
 }
 
@@ -393,15 +384,15 @@ float calculateDisplacement(float noiseVal, float displacement_anim_factor) {
 // =============================================================================
 
 void main() {
-    // Store base UV coordinates
+  // Store base UV coordinates
   vUv = uv;
   vGlobalTime = uTime;
 
-    // 1. CALCULATE TANGENT SPACE VECTORS
+  // CALCULATE TANGENT SPACE VECTORS
   vec3 objTangent, objBitangent;
   calculateTangentSpace(normal, tangent, objTangent, objBitangent);
 
-    // 2. CALCULATE FLOW AND ADVECTION
+  // CALCULATE FLOW AND ADVECTION
   vec3 flow_sample_coord = position * uLfFlowScale;
   float flow_anim_time = uTime * uLfFlowTimeScale;
   vec3 flow_vector = get_flow_vector(flow_sample_coord, flow_anim_time);
@@ -410,15 +401,15 @@ void main() {
   vec3 advected_spatial_coord = p_local_spatial + flow_vector * uLfFlowStrength;
   float pattern_anim_time = uTime * uLfPatternTimeScale;
 
-    // Store advected coordinates for fragment shader
+  // Store advected coordinates for fragment shader
   vAdvectedCoord = advected_spatial_coord;
 
-  // Calculate advected UV with clamping to reduce stretching
+  // Calculate advected UV
   vUvAdvectedCoord = calculateAdvectedUV(uv, flow_vector, uLfFlowStrength * 0.3);
 
   vPatternTime = pattern_anim_time;
 
-    // 3. CALCULATE LOW FREQUENCY NOISE
+  // CALCULATE LOW FREQUENCY NOISE
   // int octaves = int(uLfOctaves);
   // float noiseVal = 0.0;
 
@@ -426,33 +417,33 @@ void main() {
   //   noiseVal = fbm_simplex3d_advected(advected_spatial_coord, pattern_anim_time, octaves, uLfLacunarity, uLfPersistence, uEnablePeriodicLf, uPeriodicLengthLf);
   // }
 
-  // 4. CALCULATE DISPLACEMENT ANIMATION FACTOR
+  // CALCULATE DISPLACEMENT ANIMATION FACTOR
   vDisplacementAnimFactor = simple_noise1d_pos1(uTime * uVertexAnimationSpeed);
 
-    // 5. CALCULATE DISPLACEMENT MAP NORMALS
+  // CALCULATE DISPLACEMENT MAP NORMALS
   // vec3 dispMapNormal_tangent = calculateDisplacementMapNormals(vUvAdvectedCoord, uDispMapNormalStrength);
   // vec3 dispMapNormal_object = transformDisplacementNormalToObjectSpace(dispMapNormal_tangent, objTangent, objBitangent, normal);
 
-  // 6. CALCULATE LOW FREQUENCY NORMALS
+  // CALCULATE LOW FREQUENCY NORMALS
   // vec3 lfNormalPerturbation = calculateLFNormals(advected_spatial_coord, pattern_anim_time, octaves, uLfLacunarity, uLfPersistence, uEnablePeriodicLf, uPeriodicLengthLf, uLfNormalStrength);
 
-  // 7. COMBINE ALL NORMALS
+  // COMBINE ALL NORMALS
   vec3 final_normal = normalize(normal);// - lfNormalPerturbation + dispMapNormal_object);
   vObjectNormal = final_normal;
 
-  // 8. CALCULATE FINAL DISPLACEMENT
-  float actual_displacement = (texture2D(uDispMap, vUvAdvectedCoord).x - 0.5) * 1.0;
+  // CALCULATE FINAL DISPLACEMENT
+  float actual_displacement = texture2D(uDispMap, vUvAdvectedCoord).x - 0.5;
 
   float dispOffset = simplex3d(vec3(position.xy, uTime * uVertexAnimationSpeed));
   actual_displacement = actual_displacement + (vDisplacementAnimFactor * uVertexAnimationAmount * dispOffset);
 
-  // 9. APPLY DISPLACEMENT TO POSITION
+  // APPLY DISPLACEMENT TO POSITION
   vec3 displacedPosition = position + normal * actual_displacement * uVertexDisplacementScale;
 
-  // 10. TRANSFORM TO SCREEN SPACE
+  // TRANSFORM TO SCREEN SPACE
   gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
 
-  // 11. CALCULATE OUTPUT VARYINGS
+  // CALCULATE OUTPUT VARYINGS
   vWorldPosition = (modelMatrix * vec4(displacedPosition, 1.0)).xyz;
 
   // Transform tangent space vectors to view space for fragment shader
@@ -463,11 +454,11 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(displacedPosition, 1.0);
   vViewPosition = -mvPosition.xyz;
 
-  //   // 12. PROCESS NOISE VALUE FOR FRAGMENT SHADER
+  //   // PROCESS NOISE VALUE FOR FRAGMENT SHADER
   // float noiseVal01 = noiseVal * 0.5 + 0.5;
   // noiseVal01 = (noiseVal01 - uLfNoiseContrastLower) / max(uLfNoiseContrastUpper - uLfNoiseContrastLower, 0.00001);
   // vNoise = clamp(noiseVal01, 0.0, 1.0);
 
-    // Override with actual displacement for thickness calculation
+  // Override with actual displacement for thickness calculation
   vNoise = actual_displacement;
 }

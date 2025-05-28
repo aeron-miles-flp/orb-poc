@@ -2,6 +2,7 @@
 <html>
 
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ChatBot</title>
   <style>
     body {
@@ -13,6 +14,10 @@
 
     canvas {
       display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+      /* Prevents touch scrolling */
     }
 
     #info {
@@ -26,7 +31,6 @@
       z-index: 100;
       font-size: 12px;
       max-width: 300px;
-      max-height:300px;
     }
 
     /* Preset Buttons Styling */
@@ -122,14 +126,14 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import GUI from 'lil-gui';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // <-- ADD THIS LINE
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
     let scene, camera, renderer, sphere, controls;
     let bCellModel;
     let animationStartTime;
     let gui;
-    const SETTINGS_KEY = 'flowNoiseShaderSettings_v5';
-    const PRESETS_KEY = 'flowNoiseShaderPresets_v5';
+    const SETTINGS_KEY = 'flowNoiseShaderSettings_6';
+    const PRESETS_KEY = 'flowNoiseShaderPresets_v6';
 
     let currentPresetName = 'Default'; // Track the current preset name
     let userPresets = {}; // Store user presets
@@ -143,7 +147,7 @@
       currentPreset: currentPresetName,
       newPresetName: 'MyPreset',
       deleteConfirm: false,
-      transitionTime: 1.0 // Default transition time in seconds
+      transitionTime: 0.6 // Default transition time in seconds
     };
 
     // Variables for transition blending
@@ -642,6 +646,7 @@
       uniforms.uColorNoiseGamma.value = guiParams.colorNoiseGamma;
       uniforms.uColorNoiseTimeScale.value = guiParams.colorNoiseTimeScale;
       uniforms.uColorNoiseAnimationAmount.value = guiParams.colorNoiseAnimationAmount;
+      uniforms.uColorSaturation.value = guiParams.colorSaturation;
 
       // SSS settings
       uniforms.uSSSEnable.value = guiParams.SSSEnable;
@@ -1067,6 +1072,7 @@
           uColorNoiseGamma: { value: guiParams.colorNoiseGamma },
           uColorNoiseTimeScale: { value: guiParams.colorNoiseTimeScale },
           uColorNoiseAnimationAmount: { value: guiParams.colorNoiseAnimationAmount },
+          uColorSaturation: { value: guiParams.colorSaturation },
           uAmbientIntensity: { value: guiParams.ambientIntensity !== undefined ? guiParams.ambientIntensity : 0.1 },
           uSSSEnable: { value: guiParams.SSSEnable },
           uSSSIntensity: { value: guiParams.SSSIntensity },
@@ -1201,7 +1207,7 @@
 
       const fov = 70;
       camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0, 7.0);
+      camera.position.set(0, 0, 5.0);
       camera.lookAt(0, 0, 0);
 
       controls = new OrbitControls(camera, renderer.domElement);
@@ -1217,26 +1223,13 @@
 
       if (!animationStartTime) animationStartTime = performance.now();
 
-      // REMOVE SphereGeometry creation:
-      // const sphereGeometry = new THREE.SphereGeometry(1, 512, 512);
-      // sphereGeometry.computeTangents();
-
-      // The mainMaterial is now created in loadShadersAndTextures
-      // const mainMaterial = new THREE.ShaderMaterial({ ... });
-
       if (bCellModel && mainMaterial)
       {
         bCellModel.material = mainMaterial; // Apply the shader material to the loaded model
 
-        // Adjust scale if necessary. The original sphere had a radius of 1.
-        // If your BCell.glb is much larger or smaller, you'll want to scale it
-        // to a comparable size for the shader effects and camera setup to work well.
-        // Example: Fit to a unit bounding box then scale to desired size
         const box = new THREE.Box3().setFromObject(bCellModel);
         const size = box.getSize(new THREE.Vector3());
         const scaleFactor = 1.0 / Math.max(size.x, size.y, size.z); // Scale to fit roughly in a 1x1x1 box
-        // bCellModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        // You might want a specific size, e.g., diameter of 2 (like the old sphere)
         bCellModel.scale.set(scaleFactor * 1.0, scaleFactor * 1.0, scaleFactor * 1.0); // Adjust the '1.0' for desired apparent size
 
         bCellModel.position.set(0, 0, 0); // Ensure it's at the origin
@@ -1252,11 +1245,27 @@
 
       setupGUI(); // This function will need to be aware of 'bCellModel' instead of 'sphere'
       controls.update();
-      window.addEventListener('resize', onWindowResize);
+
+      // Better orientation change handling
+      let resizeTimeout;
+      function handleResize()
+      {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(onWindowResize, 50); // Shorter delay
+      }
+
+      window.addEventListener('resize', handleResize);
       window.addEventListener('orientationchange', () =>
       {
-        setTimeout(onWindowResize, 100);
+        // Force immediate resize on orientation change
+        setTimeout(() =>
+        {
+          onWindowResize();
+          // Double-check after a delay in case the browser needs time
+          setTimeout(onWindowResize, 300);
+        }, 0);
       });
+      onWindowResize();
     }
 
     function setupGUI()
@@ -1396,32 +1405,32 @@
 
       const lfDispFolder = gui.addFolder('LF Displacement');
       // Add GUI controls for various parameters
-      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -2.0, 2.0, 0.001).name('Vertex Disp. Scale')
+      lfDispFolder.add(guiParams, 'vertexDisplacementScale', -2.0, 2.0, 0.0001).name('Vertex Disp. Scale')
         .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexDisplacementScale.value = v; saveSettings(); });
-      lfDispFolder.add(guiParams, 'vertexAnimationAmount', -1.0, 1.0, 0.001).name('Vertex Animation Amount')
+      lfDispFolder.add(guiParams, 'vertexAnimationAmount', -1.0, 1.0, 0.0001).name('Vertex Animation Amount')
         .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexAnimationAmount.value = v; saveSettings(); });
-      lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.001).name('Vertex Animation Speed')
+      lfDispFolder.add(guiParams, 'vertexAnimationSpeed', 0.0, 20.0, 0.0001).name('Vertex Animation Speed')
         .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uVertexAnimationSpeed.value = v; saveSettings(); });
       lfDispFolder.add(guiParams, 'animationSpeed', 0.0, 1.0, 0.0001).name('Global Anim Speed').onChange(saveSettings);
       lfDispFolder.close();
 
       const lfFolder = gui.addFolder('LF Noise (Displacement)');
       const lfBaseNoiseFolder = lfFolder.addFolder('Base Noise Properties');
-      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.01).name('Master Scale').onChange(v => { bCellModel.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.001).name('Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfMasterScale', 0.001, 10.0, 0.0001).name('Master Scale').onChange(v => { bCellModel.material.uniforms.uLfMasterScale.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPatternTimeScale', 0.0, 0.5, 0.0001).name('Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfPatternTimeScale.value = v; saveSettings(); });
       lfBaseNoiseFolder.add(guiParams, 'lfOctaves', 1, 8, 1).name('Octaves').onChange(v => { bCellModel.material.uniforms.uLfOctaves.value = Math.floor(v); saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.01).name('Lacunarity').onChange(v => { bCellModel.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.01).name('Persistence').onChange(v => { bCellModel.material.uniforms.uLfPersistence.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.01).name('Contrast Min').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.01).name('Contrast Max').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
-      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.001).name('LF Normal Strength').onChange(v => { bCellModel.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfLacunarity', 1.5, 4.0, 0.0001).name('Lacunarity').onChange(v => { bCellModel.material.uniforms.uLfLacunarity.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfPersistence', 0.1, 1.0, 0.0001).name('Persistence').onChange(v => { bCellModel.material.uniforms.uLfPersistence.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastLower', 0.0, 1.0, 0.0001).name('Contrast Min').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastLower.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNoiseContrastUpper', 0.0, 1.0, 0.0001).name('Contrast Max').onChange(v => { bCellModel.material.uniforms.uLfNoiseContrastUpper.value = v; saveSettings(); });
+      lfBaseNoiseFolder.add(guiParams, 'lfNormalStrength', 0.0, 1.0, 0.0001).name('LF Normal Strength').onChange(v => { bCellModel.material.uniforms.uLfNormalStrength.value = v; saveSettings(); });
       lfBaseNoiseFolder.close();
       lfBaseNoiseFolder.hide();
 
       const lfFlowFolder = lfFolder.addFolder('Flow Field (Advection)');
-      lfFlowFolder.add(guiParams, 'lfFlowScale', 0.001, 1.0, 0.01).name('Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
-      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.01).name('Flow Strength').onChange(v => { bCellModel.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
-      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.001).name('Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowScale', -1.0, 1.0, 0.0001).name('Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uLfFlowScale.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowStrength', 0.0, 5.0, 0.0001).name('Flow Strength').onChange(v => { bCellModel.material.uniforms.uLfFlowStrength.value = v; saveSettings(); });
+      lfFlowFolder.add(guiParams, 'lfFlowTimeScale', 0.0, 0.5, 0.0001).name('Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uLfFlowTimeScale.value = v; saveSettings(); });
 
       // --- START: Added Periodic Settings ---
       const lfPeriodicFolder = lfFolder.addFolder('Periodic Tiling');
@@ -1431,19 +1440,19 @@
           bCellModel.material.uniforms.uEnablePeriodicLf.value = v;
           saveSettings();
         });
-      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthX', 1.0, 20.0, 0.1).name('Period Length X')
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthX', 1.0, 20.0, 0.0001).name('Period Length X')
         .onChange(v =>
         {
           bCellModel.material.uniforms.uPeriodicLengthLf.value.x = v;
           saveSettings();
         });
-      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthY', 1.0, 20.0, 0.1).name('Period Length Y')
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthY', 1.0, 20.0, 0.0001).name('Period Length Y')
         .onChange(v =>
         {
           bCellModel.material.uniforms.uPeriodicLengthLf.value.y = v;
           saveSettings();
         });
-      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthZ', 1.0, 20.0, 0.1).name('Period Length Z')
+      lfPeriodicFolder.add(guiParams, 'lfPeriodicLengthZ', 1.0, 20.0, 0.0001).name('Period Length Z')
         .onChange(v =>
         {
           bCellModel.material.uniforms.uPeriodicLengthLf.value.z = v;
@@ -1455,12 +1464,16 @@
       lfFolder.close();
 
       const colorFolder = gui.addFolder('Surface Colors');
-      colorFolder.addColor(guiParams, 'color1').name('Color 1 (Peak/Base)').onChange(v => { bCellModel.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
-      colorFolder.addColor(guiParams, 'color2').name('Color 2 (Mid)').onChange(v => { bCellModel.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
-      colorFolder.addColor(guiParams, 'color3').name('Color 3 (Base/Trough)').onChange(v => { bCellModel.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color1').name('Color 1').onChange(v => { bCellModel.material.uniforms.uColor1.value.setRGB(guiParams.color1.r, guiParams.color1.g, guiParams.color1.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color2').name('Color 2').onChange(v => { bCellModel.material.uniforms.uColor2.value.setRGB(guiParams.color2.r, guiParams.color2.g, guiParams.color2.b); saveSettings(); });
+      colorFolder.addColor(guiParams, 'color3').name('Color 3').onChange(v => { bCellModel.material.uniforms.uColor3.value.setRGB(guiParams.color3.r, guiParams.color3.g, guiParams.color3.b); saveSettings(); });
+      colorFolder.add(guiParams, 'colorSaturation', 0.0, 2.0, 0.0001).name('Color Saturation').onChange(v =>
+      {
+        bCellModel.material.uniforms.uColorSaturation.value = v; saveSettings();
+      });
       colorFolder.addColor(guiParams, 'troughColorMultiplier').name('Trough Multiplier').onChange(v => { bCellModel.material.uniforms.uTroughColorMultiplier.value.set(guiParams.troughColorMultiplier.r, guiParams.troughColorMultiplier.g, guiParams.troughColorMultiplier.b); saveSettings(); });
-      colorFolder.add(guiParams, 'troughMin', -10.0, 1.0, 0.0001).name('Trough Min').onChange(v => { bCellModel.material.uniforms.uTroughMin.value = v; saveSettings(); });
-      colorFolder.add(guiParams, 'troughMax', 0.0, 10.0, 0.0001).name('Trough Max').onChange(v => { bCellModel.material.uniforms.uTroughMax.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughMin', -10.0, 10.0, 0.0001).name('Trough Min').onChange(v => { bCellModel.material.uniforms.uTroughMin.value = v; saveSettings(); });
+      colorFolder.add(guiParams, 'troughMax', -10.0, 10.0, 0.0001).name('Trough Max').onChange(v => { bCellModel.material.uniforms.uTroughMax.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'troughGamma', 0.1, 10.0, 0.0001).name('Trough Gamma').onChange(v => { bCellModel.material.uniforms.uTroughGamma.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'colorNoiseScale', 0.0001, 2.0, 0.0001).name('Color Noise Scale').onChange(v => { bCellModel.material.uniforms.uColorNoiseScale.value = v; saveSettings(); });
       colorFolder.add(guiParams, 'colorNoiseGamma', 0.0001, 2.0, 0.0001).name('Color Noise Gamma').onChange(v => { bCellModel.material.uniforms.uColorNoiseGamma.value = v; saveSettings(); });
@@ -1473,33 +1486,33 @@
 
       const sssFolder = gui.addFolder('SSS');
       sssFolder.add(guiParams, 'SSSEnable').name('Enable SSS').onChange(v => { bCellModel.material.uniforms.uSSSEnable.value = v; saveSettings(); });
-      sssFolder.add(guiParams, 'SSSIntensity', 0.0, 1.0, 0.00001).name('SSS Intensity').onChange(v => { bCellModel.material.uniforms.uSSSIntensity.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSIntensity', 0.0, 10.0, 0.0001).name('SSS Intensity').onChange(v => { bCellModel.material.uniforms.uSSSIntensity.value = v; saveSettings(); });
       sssFolder.addColor(guiParams, 'SSSColor').name('SSS Color').onChange(v => { bCellModel.material.uniforms.uSSSColor.value.setRGB(guiParams.SSSColor.r, guiParams.SSSColor.g, guiParams.SSSColor.b); saveSettings(); });
-      sssFolder.add(guiParams, 'SSSSurfaceColorContribution', 0.0, 1.0, 0.001).name('SSS Surface Color').onChange(v => { bCellModel.material.uniforms.uSSSSurfaceColorContribution.value = v; saveSettings(); });
-      sssFolder.add(guiParams, 'SSSThicknessPower', 0.1, 20.0, 0.001).name('SSS Thickness Power').onChange(v => { bCellModel.material.uniforms.uSSSThicknessPower.value = v; saveSettings(); });
-      sssFolder.add(guiParams, 'SSSDistortion', 0.0, 20.0, 0.001).name('SSS Distortion').onChange(v => { bCellModel.material.uniforms.uSSSDistortion.value = v; saveSettings(); });
-      sssFolder.add(guiParams, 'SSSAmbient', 0.0, 40.0, 0.001).name('SSS Ambient').onChange(v => { bCellModel.material.uniforms.uSSSAmbient.value = v; saveSettings(); });
-      sssFolder.add(guiParams, 'SSSAttenuation', 0.0, 20.0, 0.001).name('SSS Attenuation').onChange(v => { bCellModel.material.uniforms.uSSSAttenuation.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSSurfaceColorContribution', 0.0, 1.0, 0.0001).name('SSS Surface Color').onChange(v => { bCellModel.material.uniforms.uSSSSurfaceColorContribution.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSThicknessPower', 0.001, 4.0, 0.0001).name('SSS Thickness Power').onChange(v => { bCellModel.material.uniforms.uSSSThicknessPower.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSDistortion', 0.0, 20.0, 0.0001).name('SSS Distortion').onChange(v => { bCellModel.material.uniforms.uSSSDistortion.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSAmbient', 0.0, 40.0, 0.0001).name('SSS Ambient').onChange(v => { bCellModel.material.uniforms.uSSSAmbient.value = v; saveSettings(); });
+      sssFolder.add(guiParams, 'SSSAttenuation', 0.0, 20.0, 0.0001).name('SSS Attenuation').onChange(v => { bCellModel.material.uniforms.uSSSAttenuation.value = v; saveSettings(); });
 
       const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
       hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { bCellModel.material.uniforms.uHfEnable.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.001).name('HF Master Scale').onChange(v => { bCellModel.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.001).name('HF Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfMasterScale', 0.1, 20.0, 0.0001).name('HF Master Scale').onChange(v => { bCellModel.material.uniforms.uHfMasterScale.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPatternTimeScale', 0.0, 1.0, 0.0001).name('HF Pattern Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfPatternTimeScale.value = v; saveSettings(); });
       hfFolder.add(guiParams, 'hfOctaves', 1, 8, 1).name('HF Octaves').onChange(v => { bCellModel.material.uniforms.uHfOctaves.value = Math.floor(v); saveSettings(); });
-      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.01).name('HF Lacunarity').onChange(v => { bCellModel.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.01).name('HF Persistence').onChange(v => { bCellModel.material.uniforms.uHfPersistence.value = v; saveSettings(); });
-      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.001).name('HF Normal Strength').onChange(v => { bCellModel.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfLacunarity', 1.5, 4.0, 0.0001).name('HF Lacunarity').onChange(v => { bCellModel.material.uniforms.uHfLacunarity.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfPersistence', 0.1, 1.0, 0.0001).name('HF Persistence').onChange(v => { bCellModel.material.uniforms.uHfPersistence.value = v; saveSettings(); });
+      hfFolder.add(guiParams, 'hfNormalStrength', 0.0, 1.0, 0.0001).name('HF Normal Strength').onChange(v => { bCellModel.material.uniforms.uHfNormalStrength.value = v; saveSettings(); });
 
       const hfFlowFolder = hfFolder.addFolder('HF Flow Field');
-      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.1).name('HF Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
-      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 1.0, 0.01).name('HF Flow Strength').onChange(v => { bCellModel.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
-      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.001).name('HF Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowScale', 0.1, 20.0, 0.0001).name('HF Flow Detail Scale').onChange(v => { bCellModel.material.uniforms.uHfFlowScale.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowStrength', 0.0, 1.0, 0.0001).name('HF Flow Strength').onChange(v => { bCellModel.material.uniforms.uHfFlowStrength.value = v; saveSettings(); });
+      hfFlowFolder.add(guiParams, 'hfFlowTimeScale', 0.0, 1.0, 0.0001).name('HF Flow Evo Speed').onChange(v => { bCellModel.material.uniforms.uHfFlowTimeScale.value = v; saveSettings(); });
       hfFlowFolder.close(); // Close HF flow by default
       hfFolder.close(); // Close HF folder by default
       hfFolder.hide();
 
       const lightingFolder = gui.addFolder('Lighting System');
-      lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.01).name('Ambient Intensity')
+      lightingFolder.add(guiParams, 'ambientIntensity', 0.0, 10.0, 0.0001).name('Ambient Intensity')
         .onChange(v => { if (bCellModel) bCellModel.material.uniforms.uAmbientIntensity.value = v; saveSettings(); });
 
       lightingFolder.add(guiParams, 'numLights', 0, MAX_LIGHTS_IN_SHADER, 1).name('Active Lights Count')
@@ -1555,7 +1568,7 @@
             lightUniformRef.color.setRGB(lightGuiParams.color.r, lightGuiParams.color.g, lightGuiParams.color.b);
             saveSettings();
           });
-        lightFolder.add(lightGuiParams, 'intensity', 0.0, 30.0, 0.01).name('Intensity')
+        lightFolder.add(lightGuiParams, 'intensity', 0.0, 30.0, 0.0001).name('Intensity')
           .onChange(v => { lightUniformRef.intensity = v; saveSettings(); });
 
         const contributionsFolder = lightFolder.addFolder('Contributions & Shininess');
@@ -1570,18 +1583,18 @@
         contributionsFolder.close(); // Close by default
 
         const positionFolder = lightFolder.addFolder('Position (View Space)');
-        positionFolder.add(lightGuiParams.position, 'x', -30, 30, 0.1).name('X')
+        positionFolder.add(lightGuiParams.position, 'x', -30, 30, 0.0001).name('X')
           .onChange(v => { lightUniformRef.position.x = v; saveSettings(); });
-        positionFolder.add(lightGuiParams.position, 'y', -30, 30, 0.1).name('Y')
+        positionFolder.add(lightGuiParams.position, 'y', -30, 30, 0.0001).name('Y')
           .onChange(v => { lightUniformRef.position.y = v; saveSettings(); });
-        positionFolder.add(lightGuiParams.position, 'z', -30, 30, 0.1).name('Z')
+        positionFolder.add(lightGuiParams.position, 'z', -30, 30, 0.0001).name('Z')
           .onChange(v => { lightUniformRef.position.z = v; saveSettings(); });
         positionFolder.close(); // Close by default
 
         const hfNormalsFolder = lightFolder.addFolder('HF Normal Influence');
-        hfNormalsFolder.add(lightGuiParams, 'diffuseHfNormalAmount', 0.0, 1.0, 0.01).name('Diffuse HF Amt')
+        hfNormalsFolder.add(lightGuiParams, 'diffuseHfNormalAmount', 0.0, 1.0, 0.0001).name('Diffuse HF Amt')
           .onChange(v => { lightUniformRef.diffuseHfNormalAmount = v; saveSettings(); });
-        hfNormalsFolder.add(lightGuiParams, 'specularHfNormalAmount', 0.0, 1.0, 0.01).name('Specular HF Amt')
+        hfNormalsFolder.add(lightGuiParams, 'specularHfNormalAmount', 0.0, 1.0, 0.0001).name('Specular HF Amt')
           .onChange(v => { lightUniformRef.specularHfNormalAmount = v; saveSettings(); });
         hfNormalsFolder.close(); // Close by default
 
@@ -1598,7 +1611,7 @@
 
       const sceneFolder = gui.addFolder('Scene & Camera');
       sceneFolder.add(guiParams, 'autoRotate').name('Auto Rotate').onChange(v => { controls.autoRotate = v; saveSettings(); });
-      sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.01).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
+      sceneFolder.add(guiParams, 'autoRotateSpeed', 0.0, 2.0, 0.0001).name('Rotate Speed').onChange(v => { controls.autoRotateSpeed = v; saveSettings(); });
       sceneFolder.close(); // Keep Scene folder open
 
       gui.controllersRecursive().forEach(controller =>
@@ -1607,28 +1620,36 @@
       });
     }
 
-    // MOBILE FIX 9: Enhanced window resize handling
     function onWindowResize()
     {
-      const isMobile = window.innerWidth < 768;
+      // Get the actual viewport dimensions
+      const width = window.innerWidth;
+      const height = window.innerHeight;
 
       // Update camera aspect ratio
-      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.aspect = width / height;
 
-      // Adjust field of view for mobile if needed
-      if (isMobile && camera.fov < 65)
-      {
+      // Adjust FOV for portrait mode
+      if (camera.aspect < 1)
+      { // Portrait mode
+        camera.fov = 70 * (1 + (1 - camera.aspect) * 0.2); // Increase FOV slightly
+      } else
+      { // Landscape mode
         camera.fov = 70;
-      } else if (!isMobile && camera.fov > 65)
-      {
-        camera.fov = 60;
       }
-
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // Update renderer size
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2 for performance
 
       // Force a redraw
       renderer.render(scene, camera);
+    }
+
+    function triangleWave(time)
+    {
+      return Math.abs(2 * (time / (2 * Math.PI) - Math.floor(time / (2 * Math.PI) + 0.5)));
     }
 
     function animateScene()
@@ -1689,6 +1710,8 @@
           (guiParams.animationSpeed !== undefined ? guiParams.animationSpeed : 1.0);
         // Continue normal animation even during transitions
         // This prevents the "snap then delay" effect by maintaining consistent animation
+        // clamp time values to smooth time transitions
+        timeValue = triangleWave(timeValue / 30.0) * 90.0;
         bCellModel.material.uniforms.uTime.value = timeValue;
       }
 

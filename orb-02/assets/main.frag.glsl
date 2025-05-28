@@ -1,5 +1,6 @@
 precision highp float;
 
+float EPSILON = 0.01;
 // =============================================================================
 // VARYINGS (OUTPUT TO FRAGMENT SHADER)
 // =============================================================================
@@ -65,6 +66,7 @@ uniform float uColorNoiseScale;
 uniform float uColorNoiseGamma;
 uniform float uColorNoiseTimeScale;
 uniform float uColorNoiseAnimationAmount;
+uniform float uColorSaturation;
 
 // =============================================================================
 // HIGH FREQUENCY NOISE UNIFORMS
@@ -466,6 +468,21 @@ vec3 calculateHighFrequencyNormal(vec3 normal_lf_view) {
   return normalize(tbn * normal_perturbation_tangent_space);
 }
 
+vec3 saturation(vec3 inputXYZ, float saturation) {
+    // Calculate luminance using standard weights for RGB
+    // These weights correspond to human eye sensitivity
+  vec3 luminanceWeights = vec3(0.299, 0.587, 0.114);
+  float luminance = dot(inputXYZ, luminanceWeights);
+
+    // Create grayscale version (desaturated)
+  vec3 grayscale = vec3(luminance);
+
+    // Mix between grayscale and original color based on saturation factor
+    // saturation.x controls overall saturation
+    // For per-channel control, you could use each component separately
+  return mix(grayscale, inputXYZ, saturation);
+}
+
 // =============================================================================
 // SURFACE COLOR CALCULATION
 // =============================================================================
@@ -484,8 +501,11 @@ vec3 calculateSurfaceColor() {
   baseSurfaceColor = mix(baseSurfaceColor, uColor3, smoothstep(1.0 - uColorNoiseGamma, uColorNoiseGamma, colorNoiseValRaw_B));
 
   // Apply trough effect based on displacement
-  float vNoiseMapped = pow(smoothstep(uTroughMin, uTroughMax, vNoise), mix(uTroughGamma, uTroughGamma, uColorNoiseAnimationAmount));
-  vec3 troughEffectMultiplier = mix(uTroughColorMultiplier, vec3(1.0), vNoiseMapped);
+  float colorAnimationFactor = vDisplacementAnimFactor;
+  float vNoiseMapped = pow(smoothstep(uTroughMin, uTroughMax, vNoise), mix(uTroughGamma, uTroughGamma * colorAnimationFactor, uColorNoiseAnimationAmount));
+
+  float smoothEffect = smoothstep(0.0, 0.2, abs(uTroughMax - uTroughMin));
+  vec3 troughEffectMultiplier = mix(uTroughColorMultiplier, vec3(smoothEffect), vNoiseMapped);
 
   return baseSurfaceColor * troughEffectMultiplier;
 }
@@ -604,30 +624,25 @@ vec3 calculateLighting(vec3 surfaceColor, vec3 normal_lf_view, vec3 normal_hf_vi
 // MAIN FRAGMENT SHADER
 // =============================================================================
 void main() {
-  // 1. Calculate surface color
-  vec3 color = calculateSurfaceColor();
+  // Calculate surface color
+  vec3 color = saturation(calculateSurfaceColor(), uColorSaturation);
 
-  // 2. CTAO Texture - Curvature, Thickness, Ambient Occlusion
+  // CTAO Texture - Curvature, Thickness, Ambient Occlusion
   vec3 ctao = texture2D(uCTAOMap, vUvAdvectedCoord).xyz;
-  float thickness = pow(ctao.y, 5.0); // Extract thickness from CTAO map
+  float thickness = ctao.y;
 
-  // 3. Calculate normal with proper advection correction
-  // vec3 norm_advected = transformNormalWithAdvectionCorrection(vNormal);
+  // Calculate normal with proper advection correction
   vec3 normMapLF_advected = transformNormalWithAdvectionCorrection(texture2D(uNormalMapLF, vUvAdvectedCoord).xyz);
   vec3 normMap_advected = transformNormalWithAdvectionCorrection(texture2D(uNormalMap, vUvAdvectedCoord).xyz);
 
-  // 4. Calculate high-frequency normal if enabled
-  // vec3 normal_with_hf = calculateHighFrequencyNormal(normMap_advected);
-
-  // 5. Apply lighting with subsurface scattering
+  // Apply lighting with subsurface scattering
   vec3 litColor = calculateLighting(color, normMapLF_advected, normMap_advected, thickness);
 
-  // litColor = vec3(pow(ctao.x, 0.5));
-  // litColor -= 0.05 * (1.0 - pow(ctao.x, 1.0));
   vec3 N_diffuse = normalize(mix(normMapLF_advected, normMap_advected, uLights[0].diffuseHfNormalAmount));
-  // litColor = N_diffuse;
-  // 7. Apply gamma correction
+  // Apply gamma correction
   litColor = pow(litColor, vec3(1.0 / 2.2));
+  // pos_advected = transformByAdvection(vWorldPosition, vUvAdvectedCoord);
+  // litColor = vec3(vAdvectedCoord.xy, 0.0);
 
   gl_FragColor = vec4(vec3(litColor), 1.0);
 }
