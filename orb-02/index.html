@@ -1493,6 +1493,7 @@
       sssFolder.add(guiParams, 'SSSDistortion', 0.0, 20.0, 0.0001).name('SSS Distortion').onChange(v => { bCellModel.material.uniforms.uSSSDistortion.value = v; saveSettings(); });
       sssFolder.add(guiParams, 'SSSAmbient', 0.0, 40.0, 0.0001).name('SSS Ambient').onChange(v => { bCellModel.material.uniforms.uSSSAmbient.value = v; saveSettings(); });
       sssFolder.add(guiParams, 'SSSAttenuation', 0.0, 20.0, 0.0001).name('SSS Attenuation').onChange(v => { bCellModel.material.uniforms.uSSSAttenuation.value = v; saveSettings(); });
+      sssFolder.close();
 
       const hfFolder = gui.addFolder('HF Noise (Detail Normals)');
       hfFolder.add(guiParams, 'hfEnable').name('Enable HF Normals').onChange(v => { bCellModel.material.uniforms.uHfEnable.value = v; saveSettings(); });
