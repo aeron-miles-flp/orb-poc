@@ -67,7 +67,7 @@
   "colorNoiseScale": 0.3,
   "colorNoiseGamma": 0.5859,
   "colorNoiseTimeScale": 7,
-  "colorSaturation": 1.0,
+  "colorSaturation": 0.75,
   "colorSaturationTrough": 1.0,
   "colorSaturationPeak": 1.0,
   "colorSaturationGamma": 1.0,
