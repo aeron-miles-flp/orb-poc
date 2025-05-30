@@ -1,0 +1,82 @@
+{
+  "vertexDisplacementScale": -0.148,
+  "lfMasterScale": 1.94,
+  "lfPatternTimeScale": 0.055,
+  "lfOctaves": 1,
+  "lfLacunarity": 1.96,
+  "lfPersistence": 0.43,
+  "lfNoiseContrastLower": 0,
+  "lfNoiseContrastUpper": 1,
+  "lfNormalStrength": 0.381,
+  "lfFlowScale": 0.001,
+  "lfFlowStrength": 5,
+  "lfFlowTimeScale": 0.5,
+  "lfEnablePeriodic": false,
+  "lfPeriodicLengthX": 10,
+  "lfPeriodicLengthY": 10,
+  "lfPeriodicLengthZ": 10,
+  "animationSpeed": 0.29,
+  "hfEnable": true,
+  "hfMasterScale": 0.336,
+  "hfPatternTimeScale": 1,
+  "hfOctaves": 1,
+  "hfLacunarity": 2.38,
+  "hfPersistence": 0.29,
+  "hfNormalStrength": 0.28,
+  "hfFlowScale": 20,
+  "hfFlowStrength": 10,
+  "hfFlowTimeScale": 1,
+  "autoRotate": false,
+  "autoRotateSpeed": 0.14,
+  "lightIntensity": 1.82,
+  "ambientIntensity": 0.52,
+  "color1": {
+    "r": 1,
+    "g": 0,
+    "b": 0
+  },
+  "color2": {
+    "r": 0.0196078431372549,
+    "g": 1,
+    "b": 0.396078431372549
+  },
+  "color3": {
+    "r": 0.0784313725490196,
+    "g": 0.20392156862745098,
+    "b": 1
+  },
+  "troughColorMultiplier": {
+    "r": 0.023529411764705882,
+    "g": 0.00784313725490196,
+    "b": 0.050980392156862744
+  },
+  "troughMin": 0.002,
+  "troughMax": 0.949,
+  "troughGamma": 6.74,
+  "colorNoiseScale": 0.628,
+  "colorNoiseGamma": 1.0,
+  "colorNoiseTimeScale": 0,
+  "specularColor": {
+    "r": 0.4196078431372549,
+    "g": 1,
+    "b": 0.9019607843137255
+  },
+  "shininess": 225,
+  "specularStrength": 0.56,
+  "rimLightColor": {
+    "r": 1,
+    "g": 0.34901960784313724,
+    "b": 0
+  },
+  "rimLightIntensity": 8.87,
+  "rimLightPosition": {
+    "x": -0.8,
+    "y": -10,
+    "z": -2.1
+  },
+  "rimLightDiffuse": 0.95,
+  "rimLightSpecular": 0,
+  "rimLightShininess": 1,
+  "lfVertexDisplacementScale": -0.133,
+  "rimLightPower": 10
+}
